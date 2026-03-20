@@ -1,15 +1,20 @@
 import cv2
+import mediapipe as mp
 
-print("1. Librería cargada. Intentando encender la cámara...")
+
+BaseOptions = mp.tasks.BaseOptions
+PoseLandmarker = mp.tasks.vision.PoseLandmarker
+PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+options = PoseLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path="pose_landmarker_full.task"),
+    running_mode=VisionRunningMode.IMAGE)
+with PoseLandmarker.create_from_options(options) as landmarker:
 
 # Intentamos acceder a la cámara principal
 cap = cv2.VideoCapture(0)
-
 if not cap.isOpened():
-    print("❌ ERROR: No se pudo abrir la cámara.")
-    print("Pistas: ¿Está tapada? ¿La está usando otra app? ¿Windows le dio permisos?")
-else:
-    print("✅ ¡Luz verde! Cámara encendida. Abriendo ventana... (Presiona 'q' para salir)")
     while True:
         # Leer el video frame por frame
         ret, frame = cap.read()
