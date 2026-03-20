@@ -1,6 +1,23 @@
 import numpy as np
 import cv2 as cv
+import mediapipe as mp
+from mediapipe.tasks import python 
+from mediapipe.tasks.python import vision   
 
+
+BaseOptions = mp.tasks.BaseOptions
+PoseLandmarker = mp.tasks.vision.PoseLandmarker
+PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+options = PoseLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path="pose_landmarker_full.task"),
+    running_mode=VisionRunningMode.IMAGE)
+with PoseLandmarker.create_from_options(options) as landmarker:
+
+
+
+    
 cap = cv.VideoCapture('ejemplo.mp4')
 
 while cap.isOpened():
