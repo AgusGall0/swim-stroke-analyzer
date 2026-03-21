@@ -26,11 +26,8 @@ with PoseLandmarker.create_from_options(options) as landmarker:
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
         
         timestamp_ms = int(frame_count * 1000 / fps)
-        
-        # Ejecutar detección
         resultados = landmarker.detect_for_video(mp_image, timestamp_ms)
 
-        # COMPROBACIÓN: ¿Detectó algo?
         if resultados.pose_landmarks:
             print(f"Frame {frame_count}: Detectados {len(resultados.pose_landmarks[0])} puntos de referencia.")
         else:
@@ -38,6 +35,7 @@ with PoseLandmarker.create_from_options(options) as landmarker:
 
         cv.imshow('Analizador de Crol', frame)
         if cv.waitKey(24) == ord('q'):
+            
             break
         
         frame_count += 1
