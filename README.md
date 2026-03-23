@@ -37,3 +37,17 @@ python -m venv venv
 
 # Instalar las librerías requeridas
 pip install opencv-python mediapipe
+
+Estructura del Directorio
+Para que el script funcione correctamente, el directorio de trabajo debe contener la siguiente estructura base:
+/
+├── venv/                           # Entorno virtual
+├── apertura_v.py                   # Script principal de ejecución
+├── pose_landmarker_heavy.task      # Pesos del modelo de MediaPipe
+└── ejemplo.mp4                     # Video de muestra a analizar
+Próximos Pasos (En desarrollo)
+Aislamiento de las coordenadas (x, y) específicas de las extremidades superiores (hombros, codos y muñecas).
+
+Implementación de fórmulas trigonométricas para calcular la amplitud articular durante la fase de agarre y tirón.
+
+
