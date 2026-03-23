@@ -33,6 +33,19 @@ with PoseLandmarker.create_from_options(options) as landmarker:
         else:
             print(f"Frame {frame_count}: No se detectó ninguna persona.")
 
+        if resultados.pose_landmarks:
+            for pose_landmark in resultados.pose_landmarks:
+
+                tobillo_izq= pose_landmark[27]
+                visibilidad= tobillo_izq.visibility
+                
+                if visibilidad < 0.5:
+                    print(f"Frame {frame_count}: Tobillo izquierdo no visible (visibilidad={visibilidad:.2f}).")
+                else:
+                    print(f"Frame {frame_count}: Tobillo izquierdo visible (visibilidad={visibilidad:.2f}).")
+                    
+
+
         cv.imshow('Analizador de Crol', frame)
         if cv.waitKey(24) == ord('q'):
             
