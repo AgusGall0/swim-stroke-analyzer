@@ -62,10 +62,16 @@ Agustín con consentimiento de los nadadores.
 
 ## Stack
 
-- Python 3.9 o superior. **No 3.8**: MediaPipe usa anotaciones de tipo que
-  rompen con `TypeError: 'type' object is not subscriptable`.
+- Python 3.11 o superior. El piso lo fijan las dependencias pinneadas (numpy
+  2.4, scipy 1.17 y pandas 3.0 piden 3.11). Aparte, MediaPipe no corre en 3.8:
+  usa anotaciones de tipo que rompen con
+  `TypeError: 'type' object is not subscriptable`.
 - `mediapipe` con Pose Landmarker (modelo `.task`), en `RunningMode.VIDEO`
-- `opencv-python`, `numpy`, `scipy`, `pandas`, `pyarrow`, `matplotlib`
+- `opencv-contrib-python`, **no** `opencv-python`: `mediapipe` ya depende de
+  `opencv-contrib-python`, y los dos paquetes escriben el mismo módulo `cv2`.
+  Instalados juntos, uno pisa al otro y desinstalar cualquiera rompe el import.
+- `numpy`, `scipy`, `pandas`, `pyarrow`, `matplotlib`
+- `pydantic` y `pyyaml` para cargar y validar `config.yaml`
 - Versiones pinneadas en `pyproject.toml`. No las actualices sin pedirlo.
 
 El modelo `.task` no se versiona: un script lo descarga y verifica su hash.
@@ -215,6 +221,15 @@ Después de eso se decide el alcance real con evidencia: qué tan bien funciona
 MediaPipe en estas condiciones determina si el proyecto apunta a vista lateral
 sobre el agua, a comparar condiciones, o a caracterizar las limitaciones del
 método.
+
+## Cosas conocidas que no se arreglan por ahora
+
+- **Binario de 29 MB en el historial de git.** El commit `3d86d46` agregó
+  `python-3.13.12-amd64.exe` (un instalador de Python para Windows) y `a1b9f44`
+  lo borró. Ya no está en el árbol, pero sigue en el historial e infla cada
+  clon. Limpiarlo requiere reescribir el historial (`git filter-repo` o
+  similar) y forzar el push, lo que obliga a re-clonar. Fuera de alcance hasta
+  que se decida explícitamente.
 
 ## Contexto que conviene tener presente
 
