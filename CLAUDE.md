@@ -141,6 +141,10 @@ Estas las define Agustín con evidencia, no por defecto. **No las fijes por tu
 cuenta**: cuando el código las necesite, proponé opciones con sus trade-offs y
 frená.
 
+En `config.yaml` están en `null` a propósito: un número provisorio termina en
+una figura y nadie recuerda que era provisorio. El código que las use las pide
+con `Configuracion.exigir(...)`, que falla mientras sigan en `null`.
+
 - **Umbral de `visibility`.** Depende de qué tan ruidoso resulte este video. Se
   elige mirando la distribución real de visibility por landmark, no a ojo.
 - **Filtro y frecuencia de corte.** Butterworth de bajo orden es el estándar en
@@ -170,6 +174,8 @@ Un commit por cambio lógico.
 
 ```
 src/swimalyzer/
+  cli.py     subcomandos de línea de comandos
+  config.py  carga y validación de config.yaml
   io/        lectura de video, escritura de Parquet, metadata
   pose/      wrapper de MediaPipe, extracción de landmarks
   signal/    interpolación, filtrado, suavizado
@@ -179,7 +185,12 @@ tests/
 config.yaml
 scripts/     descarga del modelo, utilidades
 experiments/ los tres scripts originales, conservados como registro
+modelos/     modelo .task descargado (ignorado por git)
 ```
+
+Los índices de landmarks son constantes con nombre en
+`src/swimalyzer/pose/landmarks.py`, no parámetros de config: son el esquema
+fijo del modelo.
 
 Los scripts originales (`vision_base.py`, `pruebamedia.py`, `apertura_v.py`) van
 a `experiments/` con un README que explique qué eran. No se borran: son evidencia
