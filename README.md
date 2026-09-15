@@ -1,3 +1,5 @@
+[![CI](https://github.com/AgusGall0/swim-stroke-analyzer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AgusGall0/swim-stroke-analyzer/actions/workflows/ci.yml)
+
 # Analizador de Brazada de Crol con Visión Computacional
 
 Este proyecto utiliza visión computacional y modelos de aprendizaje profundo para analizar la técnica de natación (estilo crol) a partir de archivos de video. El sistema identifica y rastrea los puntos de referencia articulares del nadador para permitir un futuro análisis biomecánico (cálculo de ángulos de codo, hombro y entrada al agua).
