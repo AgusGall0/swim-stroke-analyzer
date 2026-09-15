@@ -1,20 +1,49 @@
-# Entornos virtuales de Python
+# --- Entornos virtuales ---
+.venv/
 venv/
 env/
 .env
 
-# Archivos cacheados de Python
+# --- Python ---
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
 
-# Archivos multimedia (Tus videos de prueba)
+# --- Video (de terceros o de nadadores: no se versiona) ---
 *.mp4
 *.avi
 *.mov
+*.mkv
+*.webm
+*.m4v
 
-# Archivos compilados de C (Para cuando hagamos el motor físico)
+# --- Fotogramas extraídos ---
+# Se ignoran todas las imágenes para no versionar fotogramas por accidente.
+# Si la documentación necesita una imagen propia, agregar una excepción
+# explícita (por ejemplo, !docs/img/diagrama.png).
+fotogramas/
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tif
+*.tiff
+
+# --- Modelo de MediaPipe (se descarga con scripts/descargar_modelo.py) ---
+modelos/
+*.task
+
+# --- Datos generados (landmarks, métricas, figuras, metadata de corridas) ---
+*.parquet
+salidas/
+resultados/
+
+# --- Binarios ---
+*.exe
 *.o
 *.so
 *.dll
-*.task
-*.exe
