@@ -6,6 +6,10 @@
 # que ningún número provisorio termine en una figura. La etapa que los necesite
 # se niega a correr hasta que se completen.
 #
+# Los valores de `calidad`, `filtrado` y `lateralidad` salieron del informe de
+# caracterización de la señal (`scripts/caracterizar_senal.py`) sobre el video
+# de desarrollo; el comentario de cada uno dice de dónde.
+#
 # Las rutas relativas se resuelven respecto de la carpeta de este archivo.
 
 modelo:
@@ -43,25 +47,36 @@ video:
   recorte: null
 
 calidad:
-  # DECISIÓN ABIERTA — SIN JUSTIFICAR TODAVÍA.
-  # Umbral de visibility (0 a 1) por debajo del cual una muestra de landmark se
-  # descarta. Se elige mirando la distribución real de visibility por landmark
-  # en el video, no a ojo. (El prototipo apertura_v.py usaba 0.5 sin
-  # justificación.)
-  umbral_visibility: null
+  # Umbral de visibility (0 a 1) por debajo del cual una medición se considera
+  # poco confiable. Es criterio de REPORTE, no de descarte: la etapa de métricas
+  # lo usa para marcar mediciones dudosas e informar cobertura por landmark, y
+  # nunca para borrar filas. El filtrado no mira este valor.
+  #
+  # 0.3: un umbral global no elige qué fotogramas son malos, elige qué miembros
+  # existen, porque en vista lateral visibility discrimina lado cercano de lado
+  # lejano; borrar esas mediciones destruiría el resultado principal, que es
+  # cuantificar cuán poco confiable es el lado lejano.
+  umbral_visibility_reporte: 0.3
 
 filtrado:
-  # DECISIÓN ABIERTA — SIN JUSTIFICAR TODAVÍA.
-  # Filtro paso bajo aplicado a las trayectorias de landmarks. La referencia en
-  # biomecánica es un Butterworth de bajo orden con corte en el entorno de 6 Hz,
-  # pero el valor se justifica con análisis de residuos sobre los datos propios.
+  # Filtro paso bajo aplicado a las trayectorias, en píxeles, tramo continuo por
+  # tramo continuo. Sin gate por visibility: se filtra todo lo detectado.
   #
-  # Tipo de filtro (por ejemplo, "butterworth").
-  tipo: null
-  # Orden del filtro (entero >= 1).
-  orden: null
-  # Frecuencia de corte en Hz (> 0).
-  frecuencia_corte_hz: null
+  # Butterworth de orden 2 con filtfilt (sin desfase), el estándar en
+  # biomecánica.
+  tipo: butterworth
+  orden: 2
+  # 3.4 Hz: mediana del análisis de residuos de Winter sobre este material
+  # (rango óptimo 2.0 a 4.25 Hz según el landmark); el piso de ruido de la PSD
+  # arranca en ~4 Hz, así que los 6 Hz habituales en biomecánica dejarían pasar
+  # ruido.
+  frecuencia_corte_hz: 3.4
+  # Hueco máximo, en fotogramas, que se interpola linealmente. Los más largos
+  # quedan en NaN y cortan el tramo.
+  #
+  # 3 fotogramas (0.1 s): con la brazada a 0.47 Hz, interpolar 0.5 s equivale a
+  # inventar un cuarto de ciclo.
+  hueco_maximo_interpolable_fotogramas: 3
 
 segmentacion:
   # DECISIÓN ABIERTA — SIN JUSTIFICAR TODAVÍA.
@@ -73,7 +88,19 @@ segmentacion:
   distancia_minima_entre_picos_s: null
 
 lateralidad:
-  # DECISIÓN ABIERTA — SIN JUSTIFICAR TODAVÍA.
-  # Heurística para detectar y corregir intercambios izquierda/derecha de
-  # MediaPipe cuando el cuerpo pasa por posiciones ambiguas.
-  metodo_correccion_intercambios: null
+  # Qué se hace con los intercambios izquierda/derecha de MediaPipe cuando el
+  # cuerpo pasa por posiciones ambiguas.
+  #
+  # "ninguno": se detectan y se marcan con una bandera en el Parquet filtrado,
+  # y se informa la tasa por par, pero no se corrigen. Corregir sin saber si el
+  # artefacto llega a la serie de ángulos sería tocar el dato antes de tener
+  # evidencia de que hace falta.
+  metodo_correccion_intercambios: ninguno
+  # Parámetros del detector: entre dos fotogramas seguidos se marca el par
+  # cuando intercambiar las etiquetas explica el movimiento con al menos
+  # `margen_minimo_px` menos de desplazamiento total.
+  margen_minimo_px: 20.0
+  # Solo se evalúan pares separados al menos esto en ambos fotogramas: con los
+  # dos puntos encimados, cuál es cuál no cambia ninguna medición. En este video
+  # la separación mediana va de 7 px (caderas) a 72 px (muñecas).
+  separacion_minima_px: 20.0

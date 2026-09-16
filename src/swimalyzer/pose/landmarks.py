@@ -24,3 +24,51 @@ TOBILLO_IZQ = 27
 TOBILLO_DER = 28
 
 CANTIDAD_LANDMARKS = 33
+
+#: Los doce landmarks del tronco y las extremidades que usa el análisis.
+LANDMARKS_DE_INTERES: tuple[int, ...] = (
+    HOMBRO_IZQ,
+    HOMBRO_DER,
+    CODO_IZQ,
+    CODO_DER,
+    MUNECA_IZQ,
+    MUNECA_DER,
+    CADERA_IZQ,
+    CADERA_DER,
+    RODILLA_IZQ,
+    RODILLA_DER,
+    TOBILLO_IZQ,
+    TOBILLO_DER,
+)
+
+#: Pares homólogos (izquierdo, derecho): los candidatos a intercambio
+#: izquierda/derecha cuando el cuerpo pasa por posiciones ambiguas.
+PARES_HOMOLOGOS: tuple[tuple[int, int], ...] = (
+    (HOMBRO_IZQ, HOMBRO_DER),
+    (CODO_IZQ, CODO_DER),
+    (MUNECA_IZQ, MUNECA_DER),
+    (CADERA_IZQ, CADERA_DER),
+    (RODILLA_IZQ, RODILLA_DER),
+    (TOBILLO_IZQ, TOBILLO_DER),
+)
+
+#: Nombre legible de cada landmark de interés, para informes y figuras.
+NOMBRES: dict[int, str] = {
+    HOMBRO_IZQ: "hombro_izq",
+    HOMBRO_DER: "hombro_der",
+    CODO_IZQ: "codo_izq",
+    CODO_DER: "codo_der",
+    MUNECA_IZQ: "muneca_izq",
+    MUNECA_DER: "muneca_der",
+    CADERA_IZQ: "cadera_izq",
+    CADERA_DER: "cadera_der",
+    RODILLA_IZQ: "rodilla_izq",
+    RODILLA_DER: "rodilla_der",
+    TOBILLO_IZQ: "tobillo_izq",
+    TOBILLO_DER: "tobillo_der",
+}
+
+
+def nombre(landmark_id: int) -> str:
+    """Nombre legible del landmark, o ``landmark_NN`` si no es uno de interés."""
+    return NOMBRES.get(landmark_id, f"landmark_{landmark_id:02d}")

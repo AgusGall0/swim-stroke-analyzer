@@ -19,7 +19,13 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      # No se descarga el modelo ni se procesa video: los tests no lo necesitan.
+      # cv2 (y por lo tanto mediapipe) enlaza contra libGL y glib, que no están
+      # en todas las imágenes. Los tests importan cv2 para armar videos
+      # sintéticos, así que sin esto el import falla antes de correr nada.
+      - name: Instalar dependencias de sistema de OpenCV
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+
+      # No se descarga el modelo ni se procesa video real: los tests no lo necesitan.
       - name: Instalar el paquete
         run: python -m pip install -e ".[dev]"
 

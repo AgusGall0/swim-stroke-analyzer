@@ -52,13 +52,15 @@ class Video(_Seccion):
 
 
 class Calidad(_Seccion):
-    umbral_visibility: Probabilidad | None
+    #: Criterio de reporte, no de descarte: marca mediciones poco confiables.
+    umbral_visibility_reporte: Probabilidad | None
 
 
 class Filtrado(_Seccion):
     tipo: str | None
     orden: Annotated[int, Field(ge=1)] | None
     frecuencia_corte_hz: Annotated[float, Field(gt=0)] | None
+    hueco_maximo_interpolable_fotogramas: Annotated[int, Field(ge=0)] | None
 
 
 class Segmentacion(_Seccion):
@@ -68,6 +70,8 @@ class Segmentacion(_Seccion):
 
 class Lateralidad(_Seccion):
     metodo_correccion_intercambios: str | None
+    margen_minimo_px: Annotated[float, Field(gt=0)] | None
+    separacion_minima_px: Annotated[float, Field(ge=0)] | None
 
 
 class Configuracion(_Seccion):

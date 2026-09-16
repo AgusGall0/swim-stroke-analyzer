@@ -25,7 +25,7 @@ El objetivo inmediato es **una rebanada vertical**: un camino completo y angosto
 que va del video a una figura.
 
 ```
-video → landmarks a Parquet → filtrado → ángulos bilaterales
+video → landmarks a Parquet → filtrado → ángulos del lado cercano (izquierdo)
       → segmentación de ciclos → curva media normalizada al 100% del ciclo
 ```
 
@@ -135,6 +135,38 @@ detección van en `config.yaml`, no incrustados en el código.
 **Los fotogramas sin detección se registran, no se saltean en silencio.** La
 serie temporal tiene que dejar constancia del hueco.
 
+**Parámetros fijados con el informe de caracterización** (2026-09-16, sobre el
+video de desarrollo recortado a 576×324). Están en `config.yaml` con su
+justificación; el informe que los respalda se regenera con
+`scripts/caracterizar_senal.py`.
+
+- **`calidad.umbral_visibility_reporte: 0.3`.** Es criterio de reporte, no de
+  descarte: en vista lateral un umbral global no elige qué fotogramas son malos,
+  elige qué miembros existen, y borrar el lado lejano destruiría el resultado
+  principal, que es cuantificar cuán poco confiable es.
+- **`filtrado`: Butterworth de orden 2 con filtfilt, corte en 3.4 Hz.** Mediana
+  del análisis de residuos de Winter sobre este material (óptimo por landmark
+  entre 2.0 y 4.25 Hz); el piso de ruido de la PSD arranca en ~4 Hz, así que los
+  6 Hz habituales en biomecánica dejarían pasar ruido.
+- **`filtrado.hueco_maximo_interpolable_fotogramas: 3`** (0.1 s). Con la brazada
+  a 0.47 Hz, interpolar 0.5 s equivale a inventar un cuarto de ciclo; los huecos
+  más largos quedan en NaN y cortan el tramo.
+- **`lateralidad.metodo_correccion_intercambios: ninguno`.** Los intercambios se
+  detectan y se marcan con una bandera en el Parquet filtrado, y se informa la
+  tasa por par, pero no se corrigen: tocar el dato antes de ver si el artefacto
+  llega a la serie de ángulos sería corregir sin evidencia.
+
+**El análisis bilateral no es viable con el video de desarrollo.** Con umbral
+0.3 el codo derecho queda sin medición usable en el 96 % de los fotogramas y la
+muñeca del lado lejano tiene 15 a 48 px RMS de ruido sobre un nadador de ~500 px.
+La rebanada vertical se hace sobre el lado cercano a la cámara (el izquierdo) y
+la limitación se reporta, no se esconde.
+
+**El recorte no va a `config.yaml`.** `video.recorte` queda en `null`: un
+recorte es propiedad del archivo que se procesa, no del método. Para el video de
+desarrollo se pasa `--recorte 0 0 576 324` por línea de comandos, y la metadata
+de la corrida registra cuál se usó.
+
 ## Decisiones abiertas
 
 Estas las define Agustín con evidencia, no por defecto. **No las fijes por tu
@@ -145,16 +177,13 @@ En `config.yaml` están en `null` a propósito: un número provisorio termina en
 una figura y nadie recuerda que era provisorio. El código que las use las pide
 con `Configuracion.exigir(...)`, que falla mientras sigan en `null`.
 
-- **Umbral de `visibility`.** Depende de qué tan ruidoso resulte este video. Se
-  elige mirando la distribución real de visibility por landmark, no a ojo.
-- **Filtro y frecuencia de corte.** Butterworth de bajo orden es el estándar en
-  biomecánica, con corte típico en el entorno de 6 Hz, pero el valor se
-  justifica con análisis de residuos sobre los datos propios.
 - **Criterio de segmentación de ciclos.** Detección de picos sobre qué señal, con
   qué distancia mínima entre picos, y cómo se valida que los ciclos detectados
   sean reales.
-- **Manejo de intercambios izquierda/derecha.** Qué heurística se usa para
-  detectarlos.
+
+Ya resueltas, con su justificación en "Decisiones de diseño ya tomadas": umbral
+de `visibility`, filtro y frecuencia de corte, criterio de hueco corto y manejo
+de intercambios izquierda/derecha.
 
 ## Convenciones
 
