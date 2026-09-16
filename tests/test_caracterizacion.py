@@ -1,12 +1,8 @@
 """Caracterización de la señal: conversión a píxeles, huecos, espectro e intercambios."""
 
-import json
-
 import numpy as np
 import pytest
 
-from swimalyzer.io.persistencia import AcumuladorDeLandmarks, escribir_landmarks
-from swimalyzer.pose.deteccion import MuestraLandmark
 from swimalyzer.pose.landmarks import CANTIDAD_LANDMARKS, CODO_DER, CODO_IZQ
 from swimalyzer.signal.caracterizacion import (
     analisis_de_residuos,
@@ -20,48 +16,7 @@ from swimalyzer.signal.caracterizacion import (
     tramos_continuos,
 )
 
-FPS = 30.0
-ANCHO, ALTO = 576, 324
-
-
-def escribir_corrida(directorio, x, y, visibility, detectado=None):
-    """Arma una corrida mínima en disco a partir de matrices (fotogramas, landmarks)."""
-    directorio.mkdir(parents=True, exist_ok=True)
-    fotogramas = x.shape[0]
-    detectado = np.ones(fotogramas, bool) if detectado is None else detectado
-    acumulador = AcumuladorDeLandmarks()
-    for frame in range(fotogramas):
-        if not detectado[frame]:
-            acumulador.agregar(frame, int(frame * 1000 / FPS), None)
-            continue
-        acumulador.agregar(
-            frame,
-            int(frame * 1000 / FPS),
-            [
-                MuestraLandmark(
-                    x=float(x[frame, landmark]),
-                    y=float(y[frame, landmark]),
-                    z=0.0,
-                    visibility=float(visibility[frame, landmark]),
-                    presence=1.0,
-                )
-                for landmark in range(CANTIDAD_LANDMARKS)
-            ],
-        )
-    escribir_landmarks(acumulador.tabla(), directorio / "landmarks.parquet")
-    (directorio / "metadata.json").write_text(
-        json.dumps(
-            {
-                "video": {
-                    "archivo": "prueba.mp4",
-                    "fps": FPS,
-                    "resolucion_inferencia": [ANCHO, ALTO],
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    return directorio
+from .conftest import ALTO, ANCHO, FPS, escribir_corrida
 
 
 @pytest.fixture

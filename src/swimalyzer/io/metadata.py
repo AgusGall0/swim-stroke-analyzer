@@ -107,6 +107,17 @@ def _video(info: InfoVideo, hashear_video: bool) -> dict[str, Any]:
     }
 
 
+def encabezado_de_corrida(etapa: str) -> dict[str, Any]:
+    """Lo que toda corrida registra, sea de la etapa que sea."""
+    return {
+        "esquema_metadata": 1,
+        "etapa": etapa,
+        "fecha_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+        "codigo": _codigo(),
+        "entorno": _entorno(),
+    }
+
+
 def construir_metadata(
     *,
     info: InfoVideo,
@@ -116,11 +127,7 @@ def construir_metadata(
 ) -> dict[str, Any]:
     """Arma el diccionario de metadata de una corrida de extracción."""
     return {
-        "esquema_metadata": 1,
-        "etapa": "extraccion",
-        "fecha_utc": datetime.now(UTC).isoformat(timespec="seconds"),
-        "codigo": _codigo(),
-        "entorno": _entorno(),
+        **encabezado_de_corrida("extraccion"),
         "video": _video(info, hashear_video),
         "modelo": _modelo(configuracion),
         # La configuración completa, no solo la sección de detección: así se

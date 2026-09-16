@@ -15,7 +15,8 @@ from pydantic import ValidationError
 from swimalyzer import __version__
 from swimalyzer.config import Configuracion, ErrorDeConfiguracion, Recorte, cargar_configuracion
 from swimalyzer.io.video import ErrorDeVideo
-from swimalyzer.pose.extraccion import ResultadoExtraccion, extraer
+from swimalyzer.pose.extraccion import NOMBRE_LANDMARKS, ResultadoExtraccion, extraer
+from swimalyzer.signal.filtrado import ErrorDeFiltrado, ResultadoFiltrado, filtrar_corrida
 
 RUTA_CONFIG_POR_DEFECTO = Path("config.yaml")
 
@@ -73,6 +74,31 @@ def _construir_parser() -> argparse.ArgumentParser:
         ),
     )
     extraer_parser.set_defaults(funcion=_comando_extraer)
+
+    filtrar_parser = subcomandos.add_parser(
+        "filtrar",
+        help="interpola huecos cortos y filtra las trayectorias de una corrida",
+        description=(
+            "Lee los landmarks de una corrida de `extraer`, interpola los huecos cortos, "
+            "filtra las trayectorias en píxeles con un Butterworth sin desfase y marca los "
+            "fotogramas sospechados de intercambio izquierda/derecha. No descarta nada por "
+            "visibility: la columna viaja con los datos."
+        ),
+    )
+    filtrar_parser.add_argument("corrida", type=Path, help="directorio de una corrida de `extraer`")
+    filtrar_parser.add_argument(
+        "--out",
+        type=Path,
+        metavar="DIR",
+        help="dónde escribir el resultado (por defecto, la misma corrida)",
+    )
+    filtrar_parser.add_argument(
+        "--config",
+        type=Path,
+        default=RUTA_CONFIG_POR_DEFECTO,
+        help="archivo de configuración (por defecto: %(default)s)",
+    )
+    filtrar_parser.set_defaults(funcion=_comando_filtrar)
     return parser
 
 
@@ -159,6 +185,60 @@ def _comando_extraer(args: argparse.Namespace) -> int:
         return SALIDA_ERROR_DE_EJECUCION
 
     _resumir(resultado)
+    return SALIDA_OK
+
+
+def _resumir_filtrado(resultado: ResultadoFiltrado) -> None:
+    tamano_kb = resultado.ruta_filtrado.stat().st_size / 1024
+    con_dato = resultado.muestras_con_dato
+    print(f"Muestras: {resultado.muestras} ({con_dato} con dato)")
+    print(
+        f"  interpoladas: {resultado.muestras_interpoladas} "
+        f"({resultado.fotogramas_interpolados} fotogramas)"
+    )
+    print(
+        f"  filtradas:    {resultado.muestras_filtradas}"
+        + (
+            f" ({resultado.muestras_filtradas / con_dato:.1%} de las que tienen dato)"
+            if con_dato
+            else ""
+        )
+    )
+    print(
+        f"Tramos (contados por landmark): {resultado.tramos_filtrados} filtrados, "
+        f"{resultado.tramos_demasiado_cortos} demasiado cortos para filtfilt (sin filtrar)"
+    )
+    print("Intercambios sospechados por par:")
+    for par, datos in resultado.intercambios.items():
+        print(
+            f"  {par:<28} {datos['fotogramas_marcados']:>4} de "
+            f"{datos['transiciones_evaluadas']} transiciones ({datos['tasa']:.1%})"
+        )
+    print(f"Landmarks filtrados: {resultado.ruta_filtrado} ({tamano_kb:.1f} KiB)")
+    print(f"Metadata:            {resultado.ruta_metadata}")
+
+
+def _comando_filtrar(args: argparse.Namespace) -> int:
+    if not (args.corrida / NOMBRE_LANDMARKS).is_file():
+        return _error(
+            "filtrar",
+            f"no hay una corrida de extracción en {args.corrida} (falta {NOMBRE_LANDMARKS})",
+        )
+
+    try:
+        configuracion = cargar_configuracion(args.config)
+    except ErrorDeConfiguracion as error:
+        return _error("filtrar", str(error))
+
+    try:
+        resultado = filtrar_corrida(args.corrida, args.out or args.corrida, configuracion)
+    except (ErrorDeConfiguracion, ErrorDeFiltrado) as error:
+        return _error("filtrar", str(error))
+    except OSError as error:
+        print(f"swimalyzer filtrar: error: {error}", file=sys.stderr)
+        return SALIDA_ERROR_DE_EJECUCION
+
+    _resumir_filtrado(resultado)
     return SALIDA_OK
 
 

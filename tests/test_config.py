@@ -9,14 +9,23 @@ from swimalyzer.config import Configuracion, ErrorDeConfiguracion, cargar_config
 
 CONFIG_DEL_REPO = Path(__file__).resolve().parent.parent / "config.yaml"
 
+# Lo que sigue sin definir en el config del repo. El resto de las decisiones se
+# tomó con el informe de caracterización a la vista.
 DECISIONES_ABIERTAS = [
-    "calidad.umbral_visibility",
+    "segmentacion.senal",
+    "segmentacion.distancia_minima_entre_picos_s",
+]
+
+#: Valores ya decididos: `exigir` tiene que devolverlos sin protestar.
+DECISIONES_TOMADAS = [
+    "calidad.umbral_visibility_reporte",
     "filtrado.tipo",
     "filtrado.orden",
     "filtrado.frecuencia_corte_hz",
-    "segmentacion.senal",
-    "segmentacion.distancia_minima_entre_picos_s",
+    "filtrado.hueco_maximo_interpolable_fotogramas",
     "lateralidad.metodo_correccion_intercambios",
+    "lateralidad.margen_minimo_px",
+    "lateralidad.separacion_minima_px",
 ]
 
 
@@ -96,6 +105,11 @@ def test_decisiones_abiertas_sin_definir_en_el_repo(parametro):
     configuracion = cargar_configuracion(CONFIG_DEL_REPO)
     with pytest.raises(ErrorDeConfiguracion, match=f"'{parametro}' está en null"):
         configuracion.exigir(parametro)
+
+
+@pytest.mark.parametrize("parametro", DECISIONES_TOMADAS)
+def test_decisiones_ya_tomadas_estan_definidas_en_el_repo(parametro):
+    assert cargar_configuracion(CONFIG_DEL_REPO).exigir(parametro) is not None
 
 
 def test_exigir_devuelve_el_valor_definido():

@@ -35,6 +35,8 @@ class SeriesDeLandmarks:
     x: np.ndarray
     y: np.ndarray
     visibility: np.ndarray
+    #: Marca de tiempo de cada fotograma, tal como la guardó la extracción.
+    timestamp_ms: np.ndarray
     fps: float
     ancho: int
     alto: int
@@ -77,10 +79,14 @@ def cargar_series(directorio: str | Path) -> SeriesDeLandmarks:
         salida[indice] = datos[columna].astype(np.float64)
         return salida
 
+    timestamps = np.zeros(fotogramas, dtype=np.int64)
+    timestamps[datos["frame"].astype(np.int64)] = datos["timestamp_ms"].astype(np.int64)
+
     return SeriesDeLandmarks(
         x=matriz("x") * ancho,
         y=matriz("y") * alto,
         visibility=matriz("visibility"),
+        timestamp_ms=timestamps,
         fps=fps,
         ancho=ancho,
         alto=alto,
