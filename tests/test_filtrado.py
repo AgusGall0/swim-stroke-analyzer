@@ -6,13 +6,7 @@ import numpy as np
 import pytest
 
 from swimalyzer.config import ErrorDeConfiguracion, cargar_configuracion
-from swimalyzer.pose.landmarks import (
-    CANTIDAD_LANDMARKS,
-    CODO_DER,
-    CODO_IZQ,
-    MUNECA_DER,
-    MUNECA_IZQ,
-)
+from swimalyzer.pose.landmarks import CANTIDAD_LANDMARKS, CODO_DER, CODO_IZQ
 from swimalyzer.signal.caracterizacion import cargar_series
 from swimalyzer.signal.filtrado import (
     ESQUEMA_FILTRADO,
@@ -190,7 +184,6 @@ def test_marcar_intercambios_marca_los_dos_landmarks_del_par(tmp_path):
     assert tasas[par]["fotogramas_marcados"] == 1
     assert tasas[par]["fotogramas"] == [60]
     assert tasas["muneca_izq/muneca_der"]["fotogramas_marcados"] == 0
-    assert MUNECA_IZQ != MUNECA_DER
 
 
 def test_la_metadata_del_filtrado_encadena_con_la_extraccion(tmp_path, configuracion):
