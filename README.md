@@ -5,10 +5,10 @@
 Análisis biomecánico de la brazada de crol a partir de video, con visión
 computacional.
 
-> **Estado: andamiaje.** Hoy el proyecto no analiza video. Tiene la estructura
-> del paquete, la configuración validada, la descarga verificada del modelo y un
-> CLI que valida argumentos. La extracción de landmarks y todo lo que sigue
-> todavía no están implementados.
+> **Estado: media rebanada vertical.** Del video salen landmarks persistidos en
+> Parquet, un informe que caracteriza la señal, y trayectorias interpoladas y
+> filtradas. Los ángulos articulares, la segmentación de ciclos y la figura
+> final todavía no están implementados.
 
 ## Qué es y cuál es el objetivo
 
@@ -25,33 +25,42 @@ manual.
 El primer entregable previsto es un camino completo y angosto:
 
 ```
-video → landmarks a Parquet → filtrado → ángulos bilaterales
+video → landmarks a Parquet → filtrado → ángulos articulares
       → segmentación de ciclos → curva media normalizada al 100% del ciclo
 ```
 
 que termina en la figura de la curva media ± desvío estándar del ángulo de codo
-a lo largo del ciclo de brazada.
+a lo largo del ciclo de brazada. Los ángulos se calculan sobre el lado cercano
+a la cámara; el porqué está en
+[Qué se midió sobre el video de desarrollo](#qué-se-midió-sobre-el-video-de-desarrollo).
 
 Es un proyecto de Juan Agustín Gallo (Ingeniería en Informática, Facultad de
 Tecnología y Ciencias Aplicadas, U.N.Ca.), en etapa piloto.
 
 ## Qué hace hoy
 
-- **Paquete `swimalyzer`** instalable, con los módulos `io`, `pose`, `signal`,
-  `metrics` y `viz` creados pero vacíos: cada uno solo documenta qué va a
-  contener.
-- **`config.yaml` con validación.** Si falta un parámetro, sobra uno
-  desconocido o un valor está fuera de rango, la carga falla nombrando el
-  parámetro.
+- **`swimalyzer extraer`**: corre MediaPipe Pose Landmarker fotograma a
+  fotograma y escribe un Parquet con una fila por landmark por fotograma
+  (`frame, timestamp_ms, landmark_id, x, y, z, visibility, presence`), más un
+  JSON de metadata con fps, resolución, recorte, SHA-256 del modelo y del video,
+  versión del código y la configuración usada. Los fotogramas sin detección se
+  escriben con `NaN` y sus índices quedan listados: no se saltean en silencio.
+- **`scripts/caracterizar_senal.py`**: informe reproducible de la señal cruda —
+  distribución de `visibility` por landmark, cuánto descarta cada umbral,
+  contenido frecuencial de las trayectorias, análisis de residuos de Winter y
+  candidatos a intercambio izquierda/derecha, con seis figuras.
+- **`swimalyzer filtrar`**: interpola los huecos cortos, filtra las trayectorias
+  en píxeles con un Butterworth sin desfase y marca los fotogramas sospechados
+  de intercambio, sin corregirlos. No descarta nada por `visibility`.
+- **`config.yaml` con validación.** Si falta un parámetro, sobra uno desconocido
+  o un valor está fuera de rango, la carga falla nombrando el parámetro.
 - **Descarga del modelo** MediaPipe Pose Landmarker (heavy) con verificación de
   SHA-256.
-- **CLI** `swimalyzer extraer`, que valida el video, el directorio de salida, la
-  configuración y el recorte, y termina avisando que la extracción no está
-  implementada.
 - **Tests y CI** (lint con ruff y pytest en Python 3.11).
 
-No hay extracción de landmarks, filtrado, cálculo de ángulos, segmentación de
-ciclos ni figuras. No hay análisis en tiempo real ni soporte para otros estilos.
+No hay cálculo de ángulos, segmentación de ciclos ni figuras del ciclo de
+brazada. No hay análisis en tiempo real ni soporte para otros estilos. Ningún
+resultado está validado contra anotación manual.
 
 ## Instalación
 
@@ -93,27 +102,66 @@ error. Si el modelo ya está y es correcto, no descarga nada.
 
 ```bash
 swimalyzer --help
-swimalyzer extraer <video> --out <directorio> [--config config.yaml] [--recorte X Y ANCHO ALTO]
+
+# 1. video → landmarks + metadata
+swimalyzer extraer <video> --out <directorio> [--recorte X Y ANCHO ALTO] [--fps FPS]
+
+# 2. landmarks → informe de caracterización (figuras + números)
+python scripts/caracterizar_senal.py <directorio>
+
+# 3. landmarks → trayectorias interpoladas y filtradas
+swimalyzer filtrar <directorio> [--out <otro directorio>]
 ```
 
-Por ahora `extraer` solo valida los argumentos y termina con código de salida 1
-avisando que no está implementado. `--recorte` recibe la región del video
-original a procesar, en píxeles, y sobrescribe `video.recorte` de la
-configuración.
+`--recorte` recibe la región del video original a procesar, en píxeles, y
+sobrescribe `video.recorte` de la configuración. `--fps` solo hace falta si el
+contenedor no informa una tasa de fotogramas usable; sin él, y sin dato en el
+contenedor, el comando falla en vez de calcular timestamps con una división por
+cero.
+
+`filtrar` escribe `landmarks_filtrados.parquet` con las coordenadas ya en
+píxeles (`x_px`, `y_px`), la `visibility` de cada muestra y tres banderas:
+`interpolado`, `filtrado` (falso en los tramos demasiado cortos para `filtfilt`,
+que quedan sin filtrar en lugar de desaparecer) e `intercambio_sospechado`.
+
+### El recorte del video de desarrollo
+
+El clip de desarrollo es vertical, de 576×512, pero el contenido real ocupa solo
+las filas 0 a 323: el resto es relleno negro con texto sobreimpreso. Para ese
+video:
+
+```bash
+swimalyzer extraer crol_lateral.mp4 --out salidas/crol --recorte 0 0 576 324
+```
+
+Recortarlo sube la detección de 438 a 603 fotogramas de 1055, porque el nadador
+ocupa una fracción mayor de lo que entra al modelo.
+
+**Ese valor no va a `config.yaml`.** Un recorte es una propiedad del archivo que
+se está procesando, no del método: dejarlo como valor por omisión lo aplicaría a
+cualquier otro video y le comería una franja de imagen sin avisar. `video.recorte`
+queda en `null` y el recorte se pasa por línea de comandos; la metadata de cada
+corrida registra cuál se usó.
 
 ### Configuración
 
 Todos los parámetros viven en `config.yaml`, cada uno con un comentario que
-explica qué controla. Los que corresponden a decisiones metodológicas todavía
-abiertas están en `null` a propósito, sin un valor provisorio:
+explica qué controla y, cuando corresponde, de dónde salió el valor.
 
-- umbral de `visibility` para descartar muestras,
-- tipo, orden y frecuencia de corte del filtro,
-- criterio de segmentación de ciclos,
-- método de corrección de intercambios izquierda/derecha.
+Decisiones ya tomadas, con el informe de caracterización a la vista:
 
-Cada uno se va a fijar con evidencia sobre datos reales. El código que los use
-los pide con `Configuracion.exigir(...)`, que falla mientras sigan en `null`.
+| Parámetro | Valor | Por qué |
+|---|---|---|
+| `calidad.umbral_visibility_reporte` | `0.3` | Criterio de reporte, no de descarte. Un umbral global no elige qué fotogramas son malos: elige qué miembros existen. |
+| `filtrado.tipo` / `orden` | `butterworth` / `2` | Con `filtfilt`, sin desfase. El estándar en biomecánica. |
+| `filtrado.frecuencia_corte_hz` | `3.4` | Mediana del análisis de residuos de Winter sobre este material (2.0 a 4.25 Hz según el landmark). |
+| `filtrado.hueco_maximo_interpolable_fotogramas` | `3` | 0.1 s. Con la brazada a 0.47 Hz, interpolar medio segundo es inventar un cuarto de ciclo. |
+| `lateralidad.metodo_correccion_intercambios` | `ninguno` | Se detectan y se marcan; corregirlos antes de ver si el artefacto llega a los ángulos sería tocar el dato sin evidencia. |
+
+Siguen abiertas, en `null` a propósito y sin valor provisorio: el criterio de
+segmentación de ciclos (`segmentacion.senal` y
+`segmentacion.distancia_minima_entre_picos_s`). El código que las use las pide
+con `Configuracion.exigir(...)`, que falla mientras sigan en `null`.
 
 ### Tests
 
@@ -128,14 +176,14 @@ ruff check . && ruff format --check .
 src/swimalyzer/
   cli.py       subcomandos de línea de comandos
   config.py    carga y validación de config.yaml
-  io/          lectura de video, escritura de Parquet, metadata (vacío)
-  pose/        índices de landmarks; wrapper de MediaPipe (pendiente)
-  signal/      interpolación, filtrado, suavizado (vacío)
+  io/          lectura de video, escritura de Parquet, metadata de corrida
+  pose/        índices de landmarks, wrapper de MediaPipe, etapa de extracción
+  signal/      caracterización de la señal, interpolación y filtrado
   metrics/     ángulos, segmentación de ciclos, métricas derivadas (vacío)
-  viz/         generación de figuras (vacío)
+  viz/         figuras del informe de caracterización
 tests/
 config.yaml
-scripts/       descarga del modelo
+scripts/       descarga del modelo, informe de caracterización
 experiments/   scripts originales, conservados como registro del proceso
 ```
 
@@ -151,26 +199,61 @@ era cada uno.
 - [x] Estructura de paquete y `pyproject.toml` con versiones pinneadas
 - [x] `config.yaml` con validación
 - [x] Script de descarga del modelo con verificación de hash
-- [x] Esqueleto del CLI
-- [x] Tests, CI y licencia
+- [x] CLI, tests, CI y licencia
 - [x] Prototipos originales movidos a `experiments/`
 
-**Falta (rebanada vertical):**
+**Rebanada vertical:**
 
-- [ ] Extracción de landmarks a Parquet, una fila por landmark por fotograma,
+- [x] Extracción de landmarks a Parquet, una fila por landmark por fotograma,
       registrando los fotogramas sin detección
-- [ ] Metadata de cada corrida (fps, resolución, hash del modelo, versión del
-      código, parámetros)
-- [ ] Distribución de `visibility` por landmark y tasa de descarte
-- [ ] Interpolación y filtrado de las trayectorias
-- [ ] Ángulos articulares bilaterales en coordenadas de píxel
-- [ ] Detección de intercambios izquierda/derecha
+- [x] Metadata de cada corrida (fps, resolución, hash del modelo y del video,
+      versión del código, parámetros)
+- [x] Distribución de `visibility` por landmark y tasa de descarte por umbral
+- [x] Análisis frecuencial y de residuos para justificar la frecuencia de corte
+- [x] Interpolación de huecos cortos y filtrado de las trayectorias
+- [x] Detección y marcado de intercambios izquierda/derecha
+- [ ] Ángulos articulares en coordenadas de píxel
 - [ ] Segmentación de ciclos de brazada
 - [ ] Figura de curva media ± desvío estándar del ángulo de codo
 
 **Después:** con esa rebanada funcionando se decide el alcance real según qué
 tan bien funcione MediaPipe en estas condiciones, y se valida contra anotación
 manual.
+
+## Qué se midió sobre el video de desarrollo
+
+Los números que siguen salen de una corrida real sobre el clip de desarrollo
+(576×324 tras el recorte, 30 fps, 1055 fotogramas) y están en
+`caracterizacion/informe.md` de esa corrida. Son provisorios en el sentido de
+que describen **este** material, no el método en general.
+
+**Con este material el análisis bilateral no es viable.** En vista lateral el
+brazo alejado de la cámara queda tapado por el torso buena parte del ciclo, y
+eso se ve en los datos:
+
+- Con umbral `0.3`, el **codo derecho** —el lado lejano— queda sin medición
+  usable en el **96 % de los fotogramas** del video (93,5 % de los que tuvieron
+  detección). La muñeca derecha, en el 86 %.
+- La **muñeca del lado lejano** tiene entre **15 y 48 px RMS de ruido** según el
+  eje, sobre un nadador que ocupa unos 500 px de largo. Ningún filtro arregla
+  eso: no es ruido de alta frecuencia sobre una trayectoria buena, es una
+  trayectoria mal estimada.
+- Los candidatos a intercambio izquierda/derecha se concentran en los brazos
+  (7,5 % de las transiciones en codos, 9,4 % en muñecas) y son prácticamente
+  nulos en caderas y rodillas.
+
+Por eso **la rebanada vertical se hace sobre el lado cercano a la cámara (el
+izquierdo en este video)**, y el lado lejano se reporta como limitación medida
+en lugar de mostrarse como si fuera una medición.
+
+En cambio, hombros y caderas tienen `visibility` por encima de 0,99 en todos los
+fotogramas con detección, y su trayectoria es estable: el tronco sirve como
+referencia.
+
+Otros dos datos de la misma corrida: la frecuencia de brazada aparece como un
+pico claro en **0,47 Hz**, y el tramo continuo con detección más largo dura
+**8,0 s** (241 fotogramas), con 15,0 s utilizables sumando los tres tramos más
+largos.
 
 ## Limitaciones conocidas del enfoque
 
