@@ -1,10 +1,11 @@
-"""Estimación de pose con MediaPipe. Sin implementar todavía.
+"""Estimación de pose con MediaPipe.
 
-Qué va acá:
+- :mod:`swimalyzer.pose.landmarks`: esquema fijo de índices de landmarks.
+- :mod:`swimalyzer.pose.deteccion`: wrapper de Pose Landmarker en
+  ``RunningMode.VIDEO``, construido desde las secciones ``modelo`` y
+  ``deteccion`` de la configuración.
+- :mod:`swimalyzer.pose.extraccion`: la etapa completa, de video a Parquet más
+  metadata.
 
-- Wrapper de Pose Landmarker en ``RunningMode.VIDEO``, construido a partir de
-  las secciones ``modelo`` y ``deteccion`` de la configuración.
-- Extracción de los 33 landmarks por fotograma hacia la estructura que
-  persiste ``swimalyzer.io``. Este módulo no dibuja ni calcula métricas.
-- Esquema fijo de índices de landmarks, en ``swimalyzer.pose.landmarks``.
+Este subpaquete no dibuja ni calcula métricas.
 """

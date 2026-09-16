@@ -19,18 +19,11 @@ import urllib.request
 from pathlib import Path
 
 from swimalyzer.config import ErrorDeConfiguracion, cargar_configuracion
+from swimalyzer.io.metadata import sha256_de_archivo
 
 RUTA_CONFIG_POR_DEFECTO = Path(__file__).resolve().parent.parent / "config.yaml"
 TAMANO_BLOQUE_BYTES = 1024 * 1024
 TIEMPO_ESPERA_RED_S = 60
-
-
-def sha256_de_archivo(ruta: Path) -> str:
-    hash_ = hashlib.sha256()
-    with ruta.open("rb") as archivo:
-        while bloque := archivo.read(TAMANO_BLOQUE_BYTES):
-            hash_.update(bloque)
-    return hash_.hexdigest()
 
 
 def descargar(url: str, destino: Path) -> str:
