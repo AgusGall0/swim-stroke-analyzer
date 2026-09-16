@@ -25,7 +25,7 @@ El objetivo inmediato es **una rebanada vertical**: un camino completo y angosto
 que va del video a una figura.
 
 ```
-video → landmarks a Parquet → filtrado → ángulos bilaterales
+video → landmarks a Parquet → filtrado → ángulos del lado cercano (izquierdo)
       → segmentación de ciclos → curva media normalizada al 100% del ciclo
 ```
 
