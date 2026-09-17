@@ -15,8 +15,14 @@ from pydantic import ValidationError
 from swimalyzer import __version__
 from swimalyzer.config import Configuracion, ErrorDeConfiguracion, Recorte, cargar_configuracion
 from swimalyzer.io.video import ErrorDeVideo
+from swimalyzer.metrics.angulos import MOTIVOS, ResultadoAngulos, calcular_angulos_de_corrida
 from swimalyzer.pose.extraccion import NOMBRE_LANDMARKS, ResultadoExtraccion, extraer
-from swimalyzer.signal.filtrado import ErrorDeFiltrado, ResultadoFiltrado, filtrar_corrida
+from swimalyzer.signal.filtrado import (
+    NOMBRE_FILTRADO,
+    ErrorDeFiltrado,
+    ResultadoFiltrado,
+    filtrar_corrida,
+)
 
 RUTA_CONFIG_POR_DEFECTO = Path("config.yaml")
 
@@ -99,6 +105,32 @@ def _construir_parser() -> argparse.ArgumentParser:
         help="archivo de configuración (por defecto: %(default)s)",
     )
     filtrar_parser.set_defaults(funcion=_comando_filtrar)
+
+    angulos_parser = subcomandos.add_parser(
+        "angulos",
+        help="calcula los ángulos articulares del lado cercano a la cámara",
+        description=(
+            "Lee los landmarks filtrados de una corrida y calcula, sobre coordenadas en "
+            "píxeles, los ángulos de codo, hombro y rodilla izquierdos. Cada ángulo hereda "
+            "las banderas de sus tres landmarks: queda marcado si a alguno le faltó pasar "
+            "por el filtro, se interpoló, quedó sospechado de intercambio o tiene visibility "
+            "por debajo del umbral de reporte. Marcar no es descartar."
+        ),
+    )
+    angulos_parser.add_argument("corrida", type=Path, help="directorio de una corrida ya filtrada")
+    angulos_parser.add_argument(
+        "--out",
+        type=Path,
+        metavar="DIR",
+        help="dónde escribir el resultado (por defecto, la misma corrida)",
+    )
+    angulos_parser.add_argument(
+        "--config",
+        type=Path,
+        default=RUTA_CONFIG_POR_DEFECTO,
+        help="archivo de configuración (por defecto: %(default)s)",
+    )
+    angulos_parser.set_defaults(funcion=_comando_angulos)
     return parser
 
 
@@ -239,6 +271,75 @@ def _comando_filtrar(args: argparse.Namespace) -> int:
         return SALIDA_ERROR_DE_EJECUCION
 
     _resumir_filtrado(resultado)
+    return SALIDA_OK
+
+
+def _resumir_angulos(resultado: ResultadoAngulos) -> None:
+    tamano_kb = resultado.ruta_angulos.stat().st_size / 1024
+    print(
+        f"Fotogramas: {resultado.fotogramas} · umbral de visibility para marcar: "
+        f"{resultado.umbral_visibility:g}"
+    )
+    print("\nCobertura y marcado (el % de marcados es sobre los ángulos calculados):")
+    encabezado = f"  {'articulación':<12} {'calculados':>18} {'marcados':>16}   " + "  ".join(
+        f"{motivo:>13}" for motivo in MOTIVOS
+    )
+    print(encabezado)
+    for nombre, resumen in resultado.resumenes.items():
+        motivos = "  ".join(
+            f"{resumen.por_motivo[motivo] / resumen.con_dato if resumen.con_dato else 0:>12.1%}"
+            for motivo in MOTIVOS
+        )
+        print(
+            f"  {nombre:<12} {resumen.con_dato:>6} ({resumen.tasa_con_dato:>6.1%})"
+            f" {resumen.marcados:>6} ({resumen.tasa_marcados:>6.1%})   {motivos}"
+        )
+    print("  los motivos no son excluyentes: un ángulo puede estar marcado por varios")
+
+    print("\nRango de cada ángulo, en grados (180 = extendido):")
+    for nombre, resumen in resultado.resumenes.items():
+        for etiqueta, valores in (
+            ("todos", resumen.rango),
+            ("sin marcar", resumen.rango_sin_marcar),
+        ):
+            if not valores.get("n"):
+                print(f"  {nombre:<12} {etiqueta:<11} sin datos")
+                continue
+            print(
+                f"  {nombre:<12} {etiqueta:<11} n={valores['n']:>4}  "
+                f"min {valores['minimo']:>5.1f}  p5 {valores['p5']:>5.1f}  "
+                f"mediana {valores['p50']:>5.1f}  p95 {valores['p95']:>5.1f}  "
+                f"max {valores['maximo']:>5.1f}"
+            )
+
+    print(f"\nÁngulos:  {resultado.ruta_angulos} ({tamano_kb:.1f} KiB)")
+    print(f"Metadata: {resultado.ruta_metadata}")
+
+
+def _comando_angulos(args: argparse.Namespace) -> int:
+    if not (args.corrida / NOMBRE_FILTRADO).is_file():
+        return _error(
+            "angulos",
+            f"no hay una corrida filtrada en {args.corrida} (falta {NOMBRE_FILTRADO}); "
+            "corré primero swimalyzer filtrar",
+        )
+
+    try:
+        configuracion = cargar_configuracion(args.config)
+    except ErrorDeConfiguracion as error:
+        return _error("angulos", str(error))
+
+    try:
+        resultado = calcular_angulos_de_corrida(
+            args.corrida, args.out or args.corrida, configuracion
+        )
+    except (ErrorDeConfiguracion, ErrorDeFiltrado) as error:
+        return _error("angulos", str(error))
+    except OSError as error:
+        print(f"swimalyzer angulos: error: {error}", file=sys.stderr)
+        return SALIDA_ERROR_DE_EJECUCION
+
+    _resumir_angulos(resultado)
     return SALIDA_OK
 
 

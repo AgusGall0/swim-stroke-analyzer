@@ -52,15 +52,25 @@ Tecnología y Ciencias Aplicadas, U.N.Ca.), en etapa piloto.
 - **`swimalyzer filtrar`**: interpola los huecos cortos, filtra las trayectorias
   en píxeles con un Butterworth sin desfase y marca los fotogramas sospechados
   de intercambio, sin corregirlos. No descarta nada por `visibility`.
+- **`swimalyzer angulos`**: calcula los ángulos articulares del lado cercano a
+  la cámara (codo, hombro y rodilla izquierdos) sobre coordenadas en píxeles.
+  Cada ángulo hereda las banderas de sus tres landmarks: queda marcado si a
+  alguno le faltó pasar por el filtro, se interpoló, quedó sospechado de
+  intercambio o tiene `visibility` por debajo del umbral de reporte. Marcar no
+  es descartar: el valor se guarda igual.
+- **`scripts/informe_angulos.py`**: informe reproducible de los ángulos —
+  cobertura, porcentaje marcado desglosado por motivo, rango de valores de cada
+  articulación y la serie temporal del ángulo de codo.
 - **`config.yaml` con validación.** Si falta un parámetro, sobra uno desconocido
   o un valor está fuera de rango, la carga falla nombrando el parámetro.
 - **Descarga del modelo** MediaPipe Pose Landmarker (heavy) con verificación de
   SHA-256.
 - **Tests y CI** (lint con ruff y pytest en Python 3.11).
 
-No hay cálculo de ángulos, segmentación de ciclos ni figuras del ciclo de
-brazada. No hay análisis en tiempo real ni soporte para otros estilos. Ningún
-resultado está validado contra anotación manual.
+No hay segmentación de ciclos ni figura de curva media del ciclo de brazada: el
+criterio de segmentación es una decisión abierta. No hay análisis en tiempo real
+ni soporte para otros estilos. Ningún resultado está validado contra anotación
+manual.
 
 ## Instalación
 
@@ -111,6 +121,12 @@ python scripts/caracterizar_senal.py <directorio>
 
 # 3. landmarks → trayectorias interpoladas y filtradas
 swimalyzer filtrar <directorio> [--out <otro directorio>]
+
+# 4. trayectorias filtradas → ángulos articulares del lado cercano
+swimalyzer angulos <directorio> [--out <otro directorio>]
+
+# 5. ángulos → informe de ángulos (figuras + números)
+python scripts/informe_angulos.py <directorio>
 ```
 
 `--recorte` recibe la región del video original a procesar, en píxeles, y
@@ -123,6 +139,13 @@ cero.
 píxeles (`x_px`, `y_px`), la `visibility` de cada muestra y tres banderas:
 `interpolado`, `filtrado` (falso en los tramos demasiado cortos para `filtfilt`,
 que quedan sin filtrar en lugar de desaparecer) e `intercambio_sospechado`.
+
+`angulos` escribe `angulos.parquet` con una fila por articulación por fotograma:
+el ángulo en grados, la peor `visibility` de los tres landmarks que lo definen y
+una bandera por motivo de marcado (`sin_filtrar`, `interpolado`,
+`intercambio_sospechado`, `visibility_baja`). El ángulo es el **ángulo incluido
+en el vértice**, de 0° a 180°, con 180° el segmento extendido; los fotogramas
+sin los tres landmarks quedan en `NaN`.
 
 ### El recorte del video de desarrollo
 
@@ -179,11 +202,11 @@ src/swimalyzer/
   io/          lectura de video, escritura de Parquet, metadata de corrida
   pose/        índices de landmarks, wrapper de MediaPipe, etapa de extracción
   signal/      caracterización de la señal, interpolación y filtrado
-  metrics/     ángulos, segmentación de ciclos, métricas derivadas (vacío)
-  viz/         figuras del informe de caracterización
+  metrics/     ángulos articulares; faltan ciclos y métricas derivadas
+  viz/         paleta común y figuras de los informes
 tests/
 config.yaml
-scripts/       descarga del modelo, informe de caracterización
+scripts/       descarga del modelo, informes de caracterización y de ángulos
 experiments/   scripts originales, conservados como registro del proceso
 ```
 
@@ -212,7 +235,8 @@ era cada uno.
 - [x] Análisis frecuencial y de residuos para justificar la frecuencia de corte
 - [x] Interpolación de huecos cortos y filtrado de las trayectorias
 - [x] Detección y marcado de intercambios izquierda/derecha
-- [ ] Ángulos articulares en coordenadas de píxel
+- [x] Ángulos articulares en coordenadas de píxel, con las banderas de calidad
+      heredadas de sus landmarks
 - [ ] Segmentación de ciclos de brazada
 - [ ] Figura de curva media ± desvío estándar del ángulo de codo
 
@@ -254,6 +278,35 @@ Otros dos datos de la misma corrida: la frecuencia de brazada aparece como un
 pico claro en **0,47 Hz**, y el tramo continuo con detección más largo dura
 **8,0 s** (241 fotogramas), con 15,0 s utilizables sumando los tres tramos más
 largos.
+
+### Ángulos del lado cercano
+
+De la misma corrida, en `angulos/informe.md`. Hay ángulo en **608 de los 1055
+fotogramas** (57,6 %); el resto no tiene los tres landmarks.
+
+| articulación | marcados | rango sin marcar (mín · mediana · máx) |
+|---|---|---|
+| codo izq | 27,8 % | 5,2° · 159,9° · 179,9° |
+| hombro izq | 16,3 % | 0,0° · 125,8° · 180,0° |
+| rodilla izq | 36,0 % | 139,0° · 171,7° · 179,2° |
+
+El motivo de marcado que más pesa es distinto en cada una: `visibility` baja en
+la rodilla (33,6 %) y en el codo (16,3 %), intercambio sospechado en el codo
+(9,0 %) y en el hombro (7,2 %).
+
+Dos cosas que estos números dejan ver:
+
+- **El codo toma valores que el cuerpo no puede hacer.** Nueve ángulos (1,5 %)
+  caen por debajo de los 35° que deja la flexión máxima del codo, y **siete de
+  esos nueve no están marcados por ningún motivo**: la muñeca tenía `visibility`
+  entre 0,40 y 0,57, por encima del umbral de reporte. Las banderas actuales no
+  alcanzan para detectar el artefacto que más distorsiona el ángulo.
+- **La rodilla es la medición menos confiable de las tres**: es la que más
+  marcados acumula (36,0 %, casi todo `visibility` baja) y la que menos rango
+  recorre (139° a 180°). Ese rango es compatible con la flexión moderada del
+  batido de crol, así que no se puede decidir desde acá si describe el
+  movimiento o si el tobillo está mal estimado: hace falta validación contra
+  anotación manual.
 
 ## Limitaciones conocidas del enfoque
 
