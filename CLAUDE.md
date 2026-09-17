@@ -156,6 +156,28 @@ justificación; el informe que los respalda se regenera con
   tasa por par, pero no se corrigen: tocar el dato antes de ver si el artefacto
   llega a la serie de ángulos sería corregir sin evidencia.
 
+**Los ángulos se reportan como ángulo incluido en el vértice**, de 0° a 180°,
+con 180° el segmento extendido, y no con la convención anatómica de flexión
+(0° extendido). Es la medición directa, sin restarle nada a nada; la convención
+de flexión se deriva después sin volver al video. El ángulo es **proyectado** en
+el plano de la imagen: con el cuerpo rotado, un valor bajo puede ser flexión o
+puede ser escorzo, y con una sola cámara no se distinguen.
+
+**Las banderas heredadas de los landmarks son necesarias pero no suficientes.**
+Un ángulo hereda las banderas de sus tres landmarks y queda marcado si alguno
+está sin filtrar, interpolado, sospechado de intercambio o con `visibility` por
+debajo del umbral de reporte. Eso no alcanza: sobre el video de desarrollo, la
+correlación entre la `visibility` mínima de los tres landmarks y el ángulo de
+codo resultante es **0,055**, y de los nueve ángulos anatómicamente imposibles
+(por debajo de 35°) **siete no quedan marcados por ningún motivo**, porque la
+muñeca tenía `visibility` entre 0,40 y 0,57.
+
+La consecuencia es doble: hacen falta criterios que miren la magnitud derivada
+—rango anatómico y velocidad angular— y no solo el dato de origen; y, como el
+puntaje de confianza del modelo no separa lo bueno de lo imposible, la
+validación contra anotación manual deja de ser un lujo y pasa a ser la única
+forma de saber cuánto error tiene una medición.
+
 **El análisis bilateral no es viable con el video de desarrollo.** Con umbral
 0.3 el codo derecho queda sin medición usable en el 96 % de los fotogramas y la
 muñeca del lado lejano tiene 15 a 48 px RMS de ruido sobre un nadador de ~500 px.
@@ -180,6 +202,15 @@ con `Configuracion.exigir(...)`, que falla mientras sigan en `null`.
 - **Criterio de segmentación de ciclos.** Detección de picos sobre qué señal, con
   qué distancia mínima entre picos, y cómo se valida que los ciclos detectados
   sean reales.
+- **Rango anatómico válido de cada articulación**, para el motivo de marcado
+  `plausibilidad_anatomica`. Son restricciones del cuerpo, no parámetros libres:
+  se fijan con una referencia de rango de movimiento, no ajustando hasta que el
+  resultado quede lindo.
+- **Umbral de velocidad angular**, en grados por fotograma, para el motivo
+  `velocidad_angular`. La distribución que lo justifica se regenera con
+  `scripts/informe_angulos.py`.
+
+Los dos marcan, no filtran ni corrigen, igual que todo lo demás.
 
 Ya resueltas, con su justificación en "Decisiones de diseño ya tomadas": umbral
 de `visibility`, filtro y frecuencia de corte, criterio de hueco corto y manejo

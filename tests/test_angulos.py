@@ -16,6 +16,8 @@ from swimalyzer.metrics.angulos import (
     cargar_series_de_angulo,
     rango,
     resumir,
+    salto_adyacente,
+    velocidad_angular,
 )
 from swimalyzer.pose.landmarks import (
     CADERA_IZQ,
@@ -83,6 +85,36 @@ def test_calcular_sobre_coordenadas_normalizadas_distorsiona_el_angulo():
     )[0]
     assert en_pixeles == pytest.approx(45.0)
     assert abs(normalizado - en_pixeles) > 10
+
+
+# --- velocidad angular -----------------------------------------------------
+
+
+def test_velocidad_angular_es_el_cambio_respecto_del_fotograma_anterior():
+    grados = np.array([100.0, 110.0, 105.0, 105.0])
+    medida = velocidad_angular(grados)
+    # El primer fotograma no tiene con qué compararse.
+    assert np.isnan(medida[0])
+    np.testing.assert_allclose(medida[1:], [10.0, 5.0, 0.0])
+
+
+def test_la_velocidad_no_cruza_un_hueco():
+    # Un salto a través de un hueco no es velocidad: es todo lo que pasó
+    # mientras no hubo medición.
+    grados = np.array([100.0, np.nan, 20.0, 25.0])
+    medida = velocidad_angular(grados)
+    assert np.isnan(medida[1]) and np.isnan(medida[2])
+    assert medida[3] == pytest.approx(5.0)
+
+
+def test_el_salto_adyacente_mira_el_que_entra_y_el_que_sale():
+    # Un valor aislado y disparatado: entra con 80 y sale con 80.
+    grados = np.array([100.0, 100.0, 20.0, 100.0, 100.0])
+    salto = salto_adyacente(velocidad_angular(grados))
+    assert salto[2] == pytest.approx(80.0)
+    # El fotograma anterior al artefacto también lo ve, por el salto que sale.
+    assert salto[1] == pytest.approx(80.0)
+    assert salto[0] == pytest.approx(0.0)
 
 
 # --- corrida completa ------------------------------------------------------

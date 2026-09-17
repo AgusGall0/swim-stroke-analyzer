@@ -14,7 +14,12 @@ import numpy as np
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-from swimalyzer.metrics.angulos import MOTIVOS, SerieDeAngulo
+from swimalyzer.metrics.angulos import (
+    MOTIVOS,
+    SerieDeAngulo,
+    salto_adyacente,
+    velocidad_angular,
+)
 from swimalyzer.signal.caracterizacion import tramos_continuos
 from swimalyzer.viz.estilo import (
     IZQUIERDA,
@@ -216,4 +221,77 @@ def figura_rangos(series: dict[str, SerieDeAngulo], destino: Path) -> Path:
     figura.set_facecolor(SUPERFICIE)
     ejes.set_facecolor(SUPERFICIE)
     ejes.title.set_color(TINTA)
+    return guardar(figura, destino)
+
+
+def figura_velocidad_angular(
+    series: dict[str, SerieDeAngulo],
+    fps: float,
+    umbrales: tuple[float, ...],
+    destino: Path,
+) -> Path:
+    """Distribución del salto de ángulo entre fotogramas y costo de cada umbral.
+
+    Es la evidencia para elegir un umbral de velocidad angular, no la elección:
+    a la izquierda, qué saltos ocurren; a la derecha, qué fracción de la serie
+    quedaría marcada según dónde se ponga el corte.
+    """
+    estilo()
+    figura, (izquierda, derecha) = plt.subplots(1, 2, figsize=(10, 4.2))
+    colores = (IZQUIERDA, "#6da7ec", TINTA_SECUNDARIA)
+
+    for color, (nombre, serie) in zip(colores, series.items(), strict=False):
+        velocidad = velocidad_angular(serie.grados)
+        valores = np.sort(velocidad[~np.isnan(velocidad)])
+        if valores.size == 0:
+            continue
+        # Complementaria de la acumulada: qué fracción supera cada valor.
+        supera = 1 - np.arange(valores.size) / valores.size
+        izquierda.semilogy(valores, supera, color=color, label=nombre.replace("_", " "))
+
+        salto = salto_adyacente(velocidad)
+        con_dato = ~np.isnan(serie.grados)
+        with np.errstate(invalid="ignore"):
+            costo = [float((con_dato & (salto >= umbral)).sum()) for umbral in umbrales]
+        derecha.plot(
+            umbrales,
+            np.array(costo) / max(int(con_dato.sum()), 1) * 100,
+            color=color,
+            marker="o",
+            ms=4,
+            mec=SUPERFICIE,
+            mew=1.2,
+            label=nombre.replace("_", " "),
+        )
+
+    izquierda.set_xlabel("salto entre fotogramas (grados)")
+    izquierda.set_ylabel("fracción de transiciones que lo supera")
+    izquierda.set_xlim(0, None)
+    izquierda.set_title("Qué saltos ocurren", loc="left")
+
+    derecha.set_xlabel("umbral (grados por fotograma)")
+    derecha.set_ylabel("% de ángulos que quedarían marcados")
+    derecha.set_ylim(0, None)
+    derecha.set_title("Cuánto marca cada umbral", loc="left")
+    derecha.legend(loc="upper right")
+
+    figura.suptitle(
+        f"Velocidad angular, a {fps:g} fps\n"
+        "el umbral se elige mirando esto; la figura no elige nada",
+        x=0.02,
+        y=1.06,
+        ha="left",
+        fontsize=11,
+        fontweight="bold",
+        color=TINTA,
+    )
+    figura.text(
+        0.0,
+        -0.04,
+        "El salto de un fotograma incluye el ruido de los dos: un umbral bajo marca movimiento "
+        "real; uno alto deja pasar artefactos que duran varios fotogramas.",
+        fontsize=7.5,
+        color=TINTA_SECUNDARIA,
+    )
+    figura.tight_layout(rect=(0, 0.02, 1, 1.0))
     return guardar(figura, destino)

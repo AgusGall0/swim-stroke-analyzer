@@ -24,6 +24,8 @@ from swimalyzer.metrics.angulos import (
     cargar_series_de_angulo,
     rango,
     resumir,
+    salto_adyacente,
+    velocidad_angular,
 )
 from swimalyzer.signal.caracterizacion import tramos_continuos
 from swimalyzer.viz import angulos as viz
@@ -31,6 +33,14 @@ from swimalyzer.viz.angulos import ETIQUETAS_DE_MOTIVO
 
 #: Articulación cuya serie temporal se dibuja: es la que describe el ciclo.
 ARTICULACION_DE_REFERENCIA = "codo_izq"
+
+#: Umbrales de velocidad angular, en grados por fotograma, para los que el
+#: informe calcula cuánto marcaría cada uno. Son el barrido del que sale el
+#: número, no el número: elegirlo es una decisión abierta.
+UMBRALES_DE_VELOCIDAD: tuple[float, ...] = (10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 80.0)
+
+#: Percentiles de la distribución de velocidad angular que van al informe.
+PERCENTILES_DE_VELOCIDAD: tuple[float, ...] = (50, 75, 90, 95, 99)
 
 #: Piso anatómico aproximado de cada articulación, en grados de ángulo
 #: incluido, para contar cuántas mediciones caen por debajo de lo que el
@@ -57,6 +67,47 @@ def _tramo_mas_largo(serie: SerieDeAngulo) -> tuple[int, int]:
     """El tramo continuo con ángulo más largo de la serie."""
     tramos = tramos_continuos(serie.con_dato)
     return max(tramos, key=lambda tramo: tramo[1] - tramo[0])
+
+
+def _resumir_velocidad(serie: SerieDeAngulo, fps: float, piso: float) -> dict:
+    """Distribución del salto entre fotogramas y qué marcaría cada umbral."""
+    velocidad = velocidad_angular(serie.grados)
+    valores = velocidad[~np.isnan(velocidad)]
+    salto = salto_adyacente(velocidad)
+    con_dato = serie.con_dato
+    with np.errstate(invalid="ignore"):
+        fuera_del_piso = con_dato & (serie.grados < piso) if piso > 0 else np.zeros_like(con_dato)
+
+    percentiles = dict(
+        zip(
+            (f"p{p:g}" for p in PERCENTILES_DE_VELOCIDAD),
+            (float(v) for v in np.percentile(valores, PERCENTILES_DE_VELOCIDAD)),
+            strict=True,
+        )
+    )
+    costos = []
+    for umbral in UMBRALES_DE_VELOCIDAD:
+        with np.errstate(invalid="ignore"):
+            marcaria = con_dato & (salto >= umbral)
+        costos.append(
+            {
+                "umbral_grados_por_fotograma": umbral,
+                "grados_por_segundo": umbral * fps,
+                "fotogramas": int(marcaria.sum()),
+                "tasa": float(marcaria.sum() / max(int(con_dato.sum()), 1)),
+                # Cuántos de los valores anatómicamente imposibles alcanzaría a
+                # señalar este umbral: los dos motivos no se solapan del todo.
+                "fuera_del_piso_capturados": int((marcaria & fuera_del_piso).sum()),
+            }
+        )
+    return {
+        "transiciones": int(valores.size),
+        "media": float(valores.mean()),
+        "maximo": float(valores.max()),
+        "percentiles": percentiles,
+        "fuera_del_piso": int(fuera_del_piso.sum()),
+        "costo_por_umbral": costos,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -114,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
             "rango_grados": detalle.rango,
             "rango_grados_sin_marcar": detalle.rango_sin_marcar,
             "rango_grados_en_el_tramo": rango(serie.grados[inicio:fin]),
+            "velocidad_angular": _resumir_velocidad(serie, fps, piso),
             "piso_anatomico_grados": piso,
             "por_debajo_del_piso": {
                 "fotogramas": int(debajo_del_piso.sum()),
@@ -127,6 +179,9 @@ def main(argv: list[str] | None = None) -> int:
     figuras = {
         "serie_codo": viz.figura_serie(referencia, fps, tramo, destino / "serie_codo.png"),
         "rangos": viz.figura_rangos(series, destino / "rangos.png"),
+        "velocidad": viz.figura_velocidad_angular(
+            series, fps, UMBRALES_DE_VELOCIDAD, destino / "velocidad_angular.png"
+        ),
     }
 
     (destino / "angulos.json").write_text(
@@ -142,6 +197,9 @@ def main(argv: list[str] | None = None) -> int:
 def _informe(resumen: dict) -> str:
     ancho, alto = resumen["video"]["resolucion_inferencia"]
     tramo = resumen["tramo_analizado"]
+    velocidad_del_codo = resumen["por_articulacion"][ARTICULACION_DE_REFERENCIA][
+        "velocidad_angular"
+    ]
     partes = [
         "# Ángulos articulares del lado cercano",
         "",
@@ -265,7 +323,62 @@ def _informe(resumen: dict) -> str:
             ],
         ),
         "",
-        "## 5. Serie temporal del ángulo de codo",
+        "## 5. Velocidad angular",
+        "",
+        "Cuánto cambia cada ángulo entre fotogramas consecutivos, en grados por fotograma. Es",
+        "la evidencia para elegir un umbral de salto: un artefacto de un fotograma entra y sale",
+        "con dos saltos grandes, mientras que el movimiento real está acotado por la frecuencia",
+        "de corte del filtro. El primer fotograma de cada tramo no tiene con qué compararse.",
+        "",
+        _tabla(
+            ["articulación", "n", "media", *(f"p{p:g}" for p in PERCENTILES_DE_VELOCIDAD), "máx"],
+            [
+                [
+                    nombre,
+                    str(datos["velocidad_angular"]["transiciones"]),
+                    f"{datos['velocidad_angular']['media']:.1f}",
+                    *(
+                        f"{datos['velocidad_angular']['percentiles'][f'p{p:g}']:.1f}"
+                        for p in PERCENTILES_DE_VELOCIDAD
+                    ),
+                    f"{datos['velocidad_angular']['maximo']:.1f}",
+                ]
+                for nombre, datos in resumen["por_articulacion"].items()
+            ],
+        ),
+        "",
+        "Qué marcaría cada umbral, contando el fotograma cuando el salto que entra **o** el que",
+        "sale lo supera. La última columna dice cuántos de los ángulos por debajo del piso",
+        "anatómico alcanzaría a señalar: los dos criterios no se solapan del todo.",
+        "",
+        _tabla(
+            [
+                "umbral (°/fotograma)",
+                "equivale a (°/s)",
+                *(f"{nombre} marcados" for nombre in resumen["por_articulacion"]),
+                "codo: fuera del piso capturados",
+            ],
+            [
+                [
+                    f"{umbral:g}",
+                    f"{umbral * resumen['video']['fps']:.0f}",
+                    *(
+                        f"{costo['fotogramas']} ({costo['tasa']:.1%})"
+                        for costo in (
+                            datos["velocidad_angular"]["costo_por_umbral"][indice]
+                            for datos in resumen["por_articulacion"].values()
+                        )
+                    ),
+                    f"{velocidad_del_codo['costo_por_umbral'][indice]['fuera_del_piso_capturados']}"
+                    f" de {velocidad_del_codo['fuera_del_piso']}",
+                ]
+                for indice, umbral in enumerate(UMBRALES_DE_VELOCIDAD)
+            ],
+        ),
+        "",
+        "![velocidad angular](velocidad_angular.png)",
+        "",
+        "## 6. Serie temporal del ángulo de codo",
         "",
         f"Tramo continuo de {tramo['duracion_s']:.1f} s. Abajo, qué fotogramas están marcados",
         "y por qué motivo.",

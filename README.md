@@ -294,19 +294,47 @@ El motivo de marcado que más pesa es distinto en cada una: `visibility` baja en
 la rodilla (33,6 %) y en el codo (16,3 %), intercambio sospechado en el codo
 (9,0 %) y en el hombro (7,2 %).
 
-Dos cosas que estos números dejan ver:
+**La rodilla es la medición menos confiable de las tres**: es la que más
+marcados acumula (36,0 %, casi todo `visibility` baja) y la que menos rango
+recorre (139° a 180°). Ese rango es compatible con la flexión moderada del
+batido de crol, así que no se puede decidir desde acá si describe el movimiento
+o si el tobillo está mal estimado: hace falta validación contra anotación
+manual.
+
+#### La `visibility` no predice si el ángulo es válido
+
+Es el hallazgo más importante de esta etapa, y va en contra de lo que se
+esperaría de un puntaje de confianza:
 
 - **El codo toma valores que el cuerpo no puede hacer.** Nueve ángulos (1,5 %)
-  caen por debajo de los 35° que deja la flexión máxima del codo, y **siete de
-  esos nueve no están marcados por ningún motivo**: la muñeca tenía `visibility`
-  entre 0,40 y 0,57, por encima del umbral de reporte. Las banderas actuales no
-  alcanzan para detectar el artefacto que más distorsiona el ángulo.
-- **La rodilla es la medición menos confiable de las tres**: es la que más
-  marcados acumula (36,0 %, casi todo `visibility` baja) y la que menos rango
-  recorre (139° a 180°). Ese rango es compatible con la flexión moderada del
-  batido de crol, así que no se puede decidir desde acá si describe el
-  movimiento o si el tobillo está mal estimado: hace falta validación contra
-  anotación manual.
+  caen por debajo de los 35° que deja la flexión máxima del codo —hay valores de
+  5,2°, 6,9° y 13,7°— y **siete de esos nueve no están marcados por ningún
+  motivo**: la muñeca tenía `visibility` entre **0,40 y 0,57**, cómodamente por
+  encima del umbral de reporte de 0,3.
+- **La correlación entre la `visibility` mínima de los tres landmarks y el
+  ángulo resultante es 0,055**, sobre 603 mediciones. Es decir: ninguna. Saber
+  que MediaPipe está seguro de dónde puso el punto no dice nada sobre si el
+  ángulo derivado de ese punto tiene sentido.
+
+De ahí salen dos consecuencias para el proyecto:
+
+1. **Las banderas heredadas de los landmarks son necesarias pero no
+   suficientes.** Hacen falta criterios que miren la magnitud derivada y no solo
+   el dato de origen: si el valor cae fuera del rango que la articulación puede
+   recorrer, y si cambia más rápido de lo que el cuerpo puede moverse.
+2. **Es un argumento directo a favor de validar contra anotación manual.** Si el
+   puntaje de confianza del modelo no separa las mediciones buenas de las
+   imposibles, el único juez disponible es un humano marcando fotogramas. Sin
+   eso no hay forma de decir cuánto error tiene una medición, que es el aporte
+   que este proyecto se propone.
+
+La velocidad angular separa mejor esos casos: el codo se mueve una mediana de
+6,1° por fotograma (183 °/s), y seis de los nueve valores imposibles entran o
+salen con un salto de entre 47° y 132° en un solo fotograma. Los otros tres
+están en el medio de una excursión que dura varios fotogramas, donde no hay
+salto que detectar: los dos criterios se complementan, ninguno alcanza solo. La
+distribución completa y el costo de cada umbral están en `angulos/informe.md`;
+el umbral todavía no está elegido.
 
 ## Limitaciones conocidas del enfoque
 

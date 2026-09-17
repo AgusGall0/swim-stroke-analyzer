@@ -218,6 +218,37 @@ def calcular_angulo(
     )
 
 
+def velocidad_angular(grados: np.ndarray) -> np.ndarray:
+    """Cuánto cambió el ángulo respecto del fotograma anterior, en grados por fotograma.
+
+    Se devuelve el módulo: para decidir si un cambio es creíble no importa si la
+    articulación se abrió o se cerró, importa cuánto se movió en 1/fps de
+    segundo. La unidad es grados **por fotograma** y no por segundo porque el
+    dato es discreto: entre dos fotogramas no hay nada, y una velocidad
+    instantánea ahí es una interpolación que el video no respalda.
+
+    El primer fotograma y los que siguen a un hueco quedan en ``NaN``: no tienen
+    con qué compararse. Un salto a través de un hueco no es velocidad, es la
+    suma de todo lo que pasó mientras no hubo medición.
+    """
+    salida = np.full(grados.size, np.nan, dtype=np.float64)
+    salida[1:] = np.abs(np.diff(grados))
+    return salida
+
+
+def salto_adyacente(velocidad: np.ndarray) -> np.ndarray:
+    """El mayor de los dos saltos que tocan cada fotograma: el que entra y el que sale.
+
+    Un valor aislado y disparatado produce dos saltos grandes, uno para llegar y
+    otro para volver. Mirar los dos es lo que permite señalar **el fotograma**
+    sospechoso y no solo la transición.
+    """
+    entra = velocidad
+    sale = np.r_[velocidad[1:], np.nan]
+    with np.errstate(invalid="ignore"):
+        return np.fmax(entra, sale)
+
+
 def rango(grados: np.ndarray) -> dict[str, Any]:
     """Mínimo, percentiles y máximo de una serie de ángulos, ignorando huecos."""
     valores = grados[~np.isnan(grados)]
