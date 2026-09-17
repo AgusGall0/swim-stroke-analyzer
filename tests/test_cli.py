@@ -110,3 +110,18 @@ def test_extraer_con_out_que_es_un_archivo(video, tmp_path, capsys):
     codigo = main(["extraer", str(video), "--out", str(ocupado), "--config", str(CONFIG_DEL_REPO)])
     assert codigo == SALIDA_ENTRADA_INVALIDA
     assert "no es un directorio" in capsys.readouterr().err
+
+
+def test_angulos_responde_a_help(capsys):
+    with pytest.raises(SystemExit) as salida:
+        main(["angulos", "--help"])
+    assert salida.value.code == 0
+    salida_estandar = capsys.readouterr().out
+    assert "--out" in salida_estandar
+    assert "píxeles" in salida_estandar
+
+
+def test_angulos_sin_corrida_filtrada_dice_que_falta_filtrar(tmp_path, capsys):
+    codigo = main(["angulos", str(tmp_path), "--config", str(CONFIG_DEL_REPO)])
+    assert codigo == SALIDA_ENTRADA_INVALIDA
+    assert "swimalyzer filtrar" in capsys.readouterr().err

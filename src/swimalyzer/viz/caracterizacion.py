@@ -3,43 +3,35 @@
 Se generan a partir del Parquet ya persistido, nunca calculando una métrica al
 paso solo para dibujarla.
 
-Color: el azul es el lado izquierdo del nadador y el naranja el derecho, en
-todas las figuras. Son los dos primeros lugares de la paleta categórica de
-referencia, que separan bien también para daltonismo; el eje x o y de una misma
-trayectoria se distingue por tipo de línea, no por color.
+La paleta y el estilo son los de :mod:`swimalyzer.viz.estilo`, comunes a todas
+las figuras del proyecto.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
-from matplotlib.lines import Line2D  # noqa: E402
-
-from swimalyzer.pose import landmarks as lm  # noqa: E402
-from swimalyzer.signal.caracterizacion import (  # noqa: E402
+from swimalyzer.pose import landmarks as lm
+from swimalyzer.signal.caracterizacion import (
     SeriesDeLandmarks,
     analisis_de_residuos,
     espectro,
 )
-
-IZQUIERDA = "#2a78d6"
-DERECHA = "#eb6834"
-SUPERFICIE = "#fcfcfb"
-TINTA = "#0b0b0b"
-TINTA_SECUNDARIA = "#52514e"
-TINTA_TENUE = "#a8a69c"
-GRIS_SIN_DATO = "#e4e2dc"
-
-#: Rampa secuencial de un solo tono (azul, claro → oscuro) para magnitudes.
-RAMPA_AZUL = LinearSegmentedColormap.from_list(
-    "azul_swimalyzer",
-    ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"],
+from swimalyzer.viz.estilo import (
+    GRIS_SIN_DATO,
+    RAMPA_AZUL,
+    SUPERFICIE,
+    TINTA,
+    TINTA_SECUNDARIA,
+    TINTA_TENUE,
+    color_de_landmark,
+    estilo,
+    guardar,
+    leyenda_de_lados,
 )
 
 #: Los seis segmentos, en orden próximo → distal.
@@ -57,62 +49,9 @@ ORDEN_DE_LANDMARKS: tuple[int, ...] = tuple(
 )
 
 
-def _estilo() -> None:
-    plt.rcParams.update(
-        {
-            "figure.facecolor": SUPERFICIE,
-            "axes.facecolor": SUPERFICIE,
-            "savefig.facecolor": SUPERFICIE,
-            "axes.edgecolor": TINTA_TENUE,
-            "axes.labelcolor": TINTA_SECUNDARIA,
-            "axes.titlecolor": TINTA,
-            "axes.titlesize": 10,
-            "axes.titleweight": "bold",
-            "axes.labelsize": 9,
-            "axes.grid": True,
-            "axes.spines.top": False,
-            "axes.spines.right": False,
-            "grid.color": "#e8e6e0",
-            "grid.linewidth": 0.8,
-            "xtick.color": TINTA_SECUNDARIA,
-            "ytick.color": TINTA_SECUNDARIA,
-            "xtick.labelsize": 8,
-            "ytick.labelsize": 8,
-            "legend.frameon": False,
-            "legend.fontsize": 8,
-            "font.size": 9,
-            "lines.linewidth": 1.6,
-        }
-    )
-
-
-def _color(landmark_id: int) -> str:
-    return IZQUIERDA if landmark_id % 2 == 1 else DERECHA
-
-
-def _guardar(figura: plt.Figure, destino: Path) -> Path:
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    figura.savefig(destino, dpi=150, bbox_inches="tight")
-    plt.close(figura)
-    return destino
-
-
-def _leyenda_de_lados(figura: plt.Figure, extra: list[Line2D] | None = None) -> None:
-    manijas = [
-        Line2D([], [], color=IZQUIERDA, lw=2.4, label="izquierdo (lado cercano)"),
-        Line2D([], [], color=DERECHA, lw=2.4, label="derecho (lado lejano)"),
-    ]
-    figura.legend(
-        handles=manijas + (extra or []),
-        loc="lower center",
-        ncols=len(manijas) + len(extra or []),
-        bbox_to_anchor=(0.5, -0.02),
-    )
-
-
 def figura_visibility(series: SeriesDeLandmarks, destino: Path) -> Path:
     """Distribución de visibility por landmark, con los umbrales candidatos."""
-    _estilo()
+    estilo()
     figura, ejes = plt.subplots(figsize=(8, 5.2))
     detectado = series.detectado
     datos = [series.visibility[detectado, landmark] for landmark in ORDEN_DE_LANDMARKS]
@@ -130,7 +69,7 @@ def figura_visibility(series: SeriesDeLandmarks, destino: Path) -> Path:
         capprops={"color": TINTA_SECUNDARIA, "lw": 1.0},
     )
     for parche, landmark in zip(caja["boxes"], ORDEN_DE_LANDMARKS, strict=True):
-        parche.set_facecolor(_color(landmark))
+        parche.set_facecolor(color_de_landmark(landmark))
         parche.set_edgecolor(SUPERFICIE)
         parche.set_linewidth(2)
 
@@ -158,13 +97,13 @@ def figura_visibility(series: SeriesDeLandmarks, destino: Path) -> Path:
         pad=16,
     )
     ejes.grid(axis="y", visible=False)
-    _leyenda_de_lados(figura)
-    return _guardar(figura, destino)
+    leyenda_de_lados(figura)
+    return guardar(figura, destino)
 
 
 def figura_descartes(series: SeriesDeLandmarks, destino: Path) -> Path:
     """Porcentaje de fotogramas descartados en función del umbral de visibility."""
-    _estilo()
+    estilo()
     figura, ejes = plt.subplots(2, 3, figsize=(10, 5.6), sharex=True, sharey=True)
     umbrales = np.linspace(0, 1, 101)
     marcados = (0.3, 0.5, 0.7, 0.9)
@@ -177,7 +116,7 @@ def figura_descartes(series: SeriesDeLandmarks, destino: Path) -> Path:
                 descartes = [
                     1 - np.sum(~np.isnan(visibility) & (visibility >= u)) / total for u in umbrales
                 ]
-            eje.plot(umbrales, np.array(descartes) * 100, color=_color(landmark))
+            eje.plot(umbrales, np.array(descartes) * 100, color=color_de_landmark(landmark))
             eje.plot(
                 marcados,
                 [
@@ -186,7 +125,7 @@ def figura_descartes(series: SeriesDeLandmarks, destino: Path) -> Path:
                 ],
                 "o",
                 ms=4.5,
-                color=_color(landmark),
+                color=color_de_landmark(landmark),
                 mec=SUPERFICIE,
                 mew=1.2,
             )
@@ -207,14 +146,14 @@ def figura_descartes(series: SeriesDeLandmarks, destino: Path) -> Path:
         fontweight="bold",
         color=TINTA,
     )
-    _leyenda_de_lados(figura)
+    leyenda_de_lados(figura)
     figura.tight_layout(rect=(0, 0.03, 1, 0.94))
-    return _guardar(figura, destino)
+    return guardar(figura, destino)
 
 
 def figura_disponibilidad(series: SeriesDeLandmarks, destino: Path) -> Path:
     """Mapa fotograma × landmark: dónde hay dato y con qué visibility."""
-    _estilo()
+    estilo()
     figura, ejes = plt.subplots(figsize=(11, 4))
     matriz = series.visibility[:, list(ORDEN_DE_LANDMARKS)].T
     mapa = RAMPA_AZUL.copy()
@@ -242,19 +181,21 @@ def figura_disponibilidad(series: SeriesDeLandmarks, destino: Path) -> Path:
         "en gris, los fotogramas sin ninguna detección",
         loc="left",
     )
-    return _guardar(figura, destino)
+    return guardar(figura, destino)
 
 
 def figura_espectros(series: SeriesDeLandmarks, tramo: tuple[int, int], destino: Path) -> Path:
     """Contenido frecuencial de las trayectorias en el tramo continuo más largo."""
-    _estilo()
+    estilo()
     inicio, fin = tramo
     figura, ejes = plt.subplots(2, 3, figsize=(10, 5.8), sharex=True)
     for eje, (nombre, izq, der) in zip(ejes.ravel(), SEGMENTOS, strict=True):
         for landmark in (izq, der):
-            for estilo, coordenada in (("-", series.x), ((0, (3, 2)), series.y)):
+            for trazo, coordenada in (("-", series.x), ((0, (3, 2)), series.y)):
                 frecuencias, potencia = espectro(coordenada[inicio:fin, landmark], series.fps)
-                eje.semilogy(frecuencias, potencia, color=_color(landmark), ls=estilo, lw=1.3)
+                eje.semilogy(
+                    frecuencias, potencia, color=color_de_landmark(landmark), ls=trazo, lw=1.3
+                )
         eje.set_title(nombre, loc="left")
         eje.set_xlim(0, series.fps / 2)
     for eje in ejes[-1]:
@@ -271,22 +212,22 @@ def figura_espectros(series: SeriesDeLandmarks, tramo: tuple[int, int], destino:
         fontweight="bold",
         color=TINTA,
     )
-    _leyenda_de_lados(figura)
+    leyenda_de_lados(figura)
     figura.tight_layout(rect=(0, 0.03, 1, 0.93))
-    return _guardar(figura, destino)
+    return guardar(figura, destino)
 
 
 def figura_residuos(
     series: SeriesDeLandmarks, tramo: tuple[int, int], destino: Path, orden: int = 2
 ) -> Path:
     """Análisis de residuos de Winter: residuo RMS contra frecuencia de corte."""
-    _estilo()
+    estilo()
     inicio, fin = tramo
     figura, ejes = plt.subplots(2, 3, figsize=(10, 5.8), sharex=True)
     for eje, (nombre, izq, der) in zip(ejes.ravel(), SEGMENTOS, strict=True):
         for landmark in (izq, der):
             residuos = analisis_de_residuos(series.x[inicio:fin, landmark], series.fps, orden=orden)
-            color = _color(landmark)
+            color = color_de_landmark(landmark)
             eje.plot(residuos.cortes_hz, residuos.residuo_rms_px, color=color)
             eje.axhline(residuos.ruido_estimado_px, color=color, lw=0.9, ls=(0, (2, 2)))
             if np.isfinite(residuos.corte_optimo_hz):
@@ -322,9 +263,9 @@ def figura_residuos(
         fontweight="bold",
         color=TINTA,
     )
-    _leyenda_de_lados(figura)
+    leyenda_de_lados(figura)
     figura.tight_layout(rect=(0, 0.03, 1, 0.93))
-    return _guardar(figura, destino)
+    return guardar(figura, destino)
 
 
 def figura_intercambios(
@@ -334,14 +275,14 @@ def figura_intercambios(
     destino: Path,
 ) -> Path:
     """Trayectorias horizontales de pares homólogos con los candidatos a intercambio."""
-    _estilo()
+    estilo()
     inicio, fin = tramo
     pares = [seg for seg in SEGMENTOS if seg[0] in candidatos]
     figura, ejes = plt.subplots(len(pares), 1, figsize=(10, 2.3 * len(pares)), sharex=True)
     tiempo = np.arange(inicio, fin) / series.fps
     for eje, (nombre, izq, der) in zip(np.atleast_1d(ejes), pares, strict=True):
         for landmark in (izq, der):
-            eje.plot(tiempo, series.x[inicio:fin, landmark], color=_color(landmark))
+            eje.plot(tiempo, series.x[inicio:fin, landmark], color=color_de_landmark(landmark))
         marcados = candidatos[nombre]
         marcados = marcados[(marcados >= inicio) & (marcados < fin)]
         for fotograma in marcados:
@@ -358,6 +299,6 @@ def figura_intercambios(
         fontweight="bold",
         color=TINTA,
     )
-    _leyenda_de_lados(figura, extra)
+    leyenda_de_lados(figura, extra)
     figura.tight_layout(rect=(0, 0.04, 1, 0.96))
-    return _guardar(figura, destino)
+    return guardar(figura, destino)

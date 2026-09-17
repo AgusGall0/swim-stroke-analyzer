@@ -156,6 +156,47 @@ justificación; el informe que los respalda se regenera con
   tasa por par, pero no se corrigen: tocar el dato antes de ver si el artefacto
   llega a la serie de ángulos sería corregir sin evidencia.
 
+**Los ángulos se reportan como ángulo incluido en el vértice**, de 0° a 180°,
+con 180° el segmento extendido, y no con la convención anatómica de flexión
+(0° extendido). Es la medición directa, sin restarle nada a nada; la convención
+de flexión se deriva después sin volver al video. El ángulo es **proyectado** en
+el plano de la imagen: con el cuerpo rotado, un valor bajo puede ser flexión o
+puede ser escorzo, y con una sola cámara no se distinguen.
+
+**Las banderas heredadas de los landmarks son necesarias pero no suficientes.**
+Un ángulo hereda las banderas de sus tres landmarks y queda marcado si alguno
+está sin filtrar, interpolado, sospechado de intercambio o con `visibility` por
+debajo del umbral de reporte. Eso no alcanza: sobre el video de desarrollo, la
+correlación entre la `visibility` mínima de los tres landmarks y el ángulo de
+codo resultante es **0,055**, y de los nueve ángulos anatómicamente imposibles
+(por debajo de 35°) **siete no quedan marcados por ningún motivo**, porque la
+muñeca tenía `visibility` entre 0,40 y 0,57.
+
+La consecuencia es doble: hacen falta criterios que miren la magnitud derivada
+—rango anatómico y velocidad angular— y no solo el dato de origen; y, como el
+puntaje de confianza del modelo no separa lo bueno de lo imposible, la
+validación contra anotación manual deja de ser un lujo y pasa a ser la única
+forma de saber cuánto error tiene una medición.
+
+Los dos criterios que se agregaron por esto, con sus valores en `config.yaml`:
+
+- **`calidad.rango_anatomico_grados`: codo [30, 180], hombro [0, 180], rodilla
+  [30, 180]**, en grados de ángulo incluido. Salen del rango de movimiento de
+  referencia en goniometría (AAOS; Norkin & White), tomando siempre el extremo
+  más permisivo: el criterio marca lo imposible, no lo inusual. El del hombro es
+  inerte a propósito, porque como ángulo incluido todo el rango es alcanzable.
+  El motivo se llama **`fuera_de_rango_en_el_plano_medido`**: un valor fuera de
+  rango puede ser un landmark mal estimado o escorzo extremo —la proyección
+  puede achicar el ángulo tanto como agrandarlo— y con una sola cámara no se
+  distingue cuál. Lo único que se afirma es que esa medición no representa a la
+  articulación.
+- **`calidad.velocidad_angular_maxima_grados_por_fotograma: 30`** (900 °/s a 30
+  fps), uno solo para las tres. Es unas 7 veces el pico que implica la brazada
+  (4,8 °/fotograma para una sinusoide a 0,47 Hz con la excursión de codo
+  medida), margen que cubre que el agarre es más rápido que el promedio y que la
+  señal no es una sinusoide. Marca lo grosero: la mediana del codo ya está por
+  encima de ese pico teórico, así que **no estar marcado no es estar limpio**.
+
 **El análisis bilateral no es viable con el video de desarrollo.** Con umbral
 0.3 el codo derecho queda sin medición usable en el 96 % de los fotogramas y la
 muñeca del lado lejano tiene 15 a 48 px RMS de ruido sobre un nadador de ~500 px.
@@ -180,10 +221,10 @@ con `Configuracion.exigir(...)`, que falla mientras sigan en `null`.
 - **Criterio de segmentación de ciclos.** Detección de picos sobre qué señal, con
   qué distancia mínima entre picos, y cómo se valida que los ciclos detectados
   sean reales.
-
 Ya resueltas, con su justificación en "Decisiones de diseño ya tomadas": umbral
-de `visibility`, filtro y frecuencia de corte, criterio de hueco corto y manejo
-de intercambios izquierda/derecha.
+de `visibility`, filtro y frecuencia de corte, criterio de hueco corto, manejo
+de intercambios izquierda/derecha, rango anatómico de cada articulación y umbral
+de velocidad angular.
 
 ## Convenciones
 

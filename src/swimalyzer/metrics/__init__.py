@@ -1,10 +1,12 @@
-"""Métricas biomecánicas. Sin implementar todavía.
+"""Métricas biomecánicas.
 
-Qué va acá:
+- :mod:`swimalyzer.metrics.angulos`: ángulos articulares del lado cercano a la
+  cámara (codo, hombro y rodilla izquierdos), calculados siempre sobre
+  coordenadas en píxeles. Cada ángulo hereda las banderas de sus tres
+  landmarks: es tan confiable como su peor componente.
 
-- Ángulos articulares bilaterales, calculados siempre sobre coordenadas en
-  píxeles (nunca sobre coordenadas normalizadas, que distorsionan el ángulo
-  por la relación de aspecto).
+Lo que todavía no está:
+
 - Segmentación de ciclos de brazada (sección ``segmentacion`` de la
   configuración; el criterio es una decisión abierta).
 - Normalización de cada ciclo al 100% y curva media ± desvío estándar.

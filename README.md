@@ -52,15 +52,26 @@ Tecnología y Ciencias Aplicadas, U.N.Ca.), en etapa piloto.
 - **`swimalyzer filtrar`**: interpola los huecos cortos, filtra las trayectorias
   en píxeles con un Butterworth sin desfase y marca los fotogramas sospechados
   de intercambio, sin corregirlos. No descarta nada por `visibility`.
+- **`swimalyzer angulos`**: calcula los ángulos articulares del lado cercano a
+  la cámara (codo, hombro y rodilla izquierdos) sobre coordenadas en píxeles y
+  los marca con seis criterios. Cuatro los hereda de sus tres landmarks —sin
+  filtrar, interpolado, intercambio sospechado, `visibility` por debajo del
+  umbral— y dos miran el ángulo ya calculado: si cae fuera del rango que la
+  articulación puede recorrer y si salta más de lo que el cuerpo puede moverse
+  entre dos fotogramas. Marcar no es descartar: el valor se guarda igual.
+- **`scripts/informe_angulos.py`**: informe reproducible de los ángulos —
+  cobertura, porcentaje marcado desglosado por motivo, rango de valores de cada
+  articulación y la serie temporal del ángulo de codo.
 - **`config.yaml` con validación.** Si falta un parámetro, sobra uno desconocido
   o un valor está fuera de rango, la carga falla nombrando el parámetro.
 - **Descarga del modelo** MediaPipe Pose Landmarker (heavy) con verificación de
   SHA-256.
 - **Tests y CI** (lint con ruff y pytest en Python 3.11).
 
-No hay cálculo de ángulos, segmentación de ciclos ni figuras del ciclo de
-brazada. No hay análisis en tiempo real ni soporte para otros estilos. Ningún
-resultado está validado contra anotación manual.
+No hay segmentación de ciclos ni figura de curva media del ciclo de brazada: el
+criterio de segmentación es una decisión abierta. No hay análisis en tiempo real
+ni soporte para otros estilos. Ningún resultado está validado contra anotación
+manual.
 
 ## Instalación
 
@@ -111,6 +122,12 @@ python scripts/caracterizar_senal.py <directorio>
 
 # 3. landmarks → trayectorias interpoladas y filtradas
 swimalyzer filtrar <directorio> [--out <otro directorio>]
+
+# 4. trayectorias filtradas → ángulos articulares del lado cercano
+swimalyzer angulos <directorio> [--out <otro directorio>]
+
+# 5. ángulos → informe de ángulos (figuras + números)
+python scripts/informe_angulos.py <directorio>
 ```
 
 `--recorte` recibe la región del video original a procesar, en píxeles, y
@@ -123,6 +140,20 @@ cero.
 píxeles (`x_px`, `y_px`), la `visibility` de cada muestra y tres banderas:
 `interpolado`, `filtrado` (falso en los tramos demasiado cortos para `filtfilt`,
 que quedan sin filtrar en lugar de desaparecer) e `intercambio_sospechado`.
+
+`angulos` escribe `angulos.parquet` con una fila por articulación por fotograma:
+el ángulo en grados, la peor `visibility` de los tres landmarks que lo definen y
+una bandera por motivo de marcado (`sin_filtrar`, `interpolado`,
+`intercambio_sospechado`, `visibility_baja`, `fuera_de_rango_en_el_plano_medido`
+y `velocidad_angular`). El ángulo es el **ángulo incluido en el vértice**, de 0°
+a 180°, con 180° el segmento extendido; los fotogramas sin los tres landmarks
+quedan en `NaN`.
+
+El motivo se llama `fuera_de_rango_en_el_plano_medido` y no algo que culpe al
+landmark porque un valor fuera del rango anatómico puede venir de una mala
+estimación **o** de escorzo extremo: la proyección puede achicar el ángulo tanto
+como agrandarlo, y con una sola cámara no se distingue cuál de los dos es. Lo
+que sí se sabe es que esa medición no representa a la articulación.
 
 ### El recorte del video de desarrollo
 
@@ -179,11 +210,11 @@ src/swimalyzer/
   io/          lectura de video, escritura de Parquet, metadata de corrida
   pose/        índices de landmarks, wrapper de MediaPipe, etapa de extracción
   signal/      caracterización de la señal, interpolación y filtrado
-  metrics/     ángulos, segmentación de ciclos, métricas derivadas (vacío)
-  viz/         figuras del informe de caracterización
+  metrics/     ángulos articulares; faltan ciclos y métricas derivadas
+  viz/         paleta común y figuras de los informes
 tests/
 config.yaml
-scripts/       descarga del modelo, informe de caracterización
+scripts/       descarga del modelo, informes de caracterización y de ángulos
 experiments/   scripts originales, conservados como registro del proceso
 ```
 
@@ -212,7 +243,8 @@ era cada uno.
 - [x] Análisis frecuencial y de residuos para justificar la frecuencia de corte
 - [x] Interpolación de huecos cortos y filtrado de las trayectorias
 - [x] Detección y marcado de intercambios izquierda/derecha
-- [ ] Ángulos articulares en coordenadas de píxel
+- [x] Ángulos articulares en coordenadas de píxel, con las banderas de calidad
+      heredadas de sus landmarks
 - [ ] Segmentación de ciclos de brazada
 - [ ] Figura de curva media ± desvío estándar del ángulo de codo
 
@@ -254,6 +286,66 @@ Otros dos datos de la misma corrida: la frecuencia de brazada aparece como un
 pico claro en **0,47 Hz**, y el tramo continuo con detección más largo dura
 **8,0 s** (241 fotogramas), con 15,0 s utilizables sumando los tres tramos más
 largos.
+
+### Ángulos del lado cercano
+
+De la misma corrida, en `angulos/informe.md`. Hay ángulo en **608 de los 1055
+fotogramas** (57,6 %); el resto no tiene los tres landmarks.
+
+| articulación | marcados | rango sin marcar (mín · mediana · máx) |
+|---|---|---|
+| codo izq | 37,8 % | 32,6° · 161,3° · 179,9° |
+| hombro izq | 32,9 % | 0,0° · 138,7° · 180,0° |
+| rodilla izq | 36,0 % | 139,0° · 171,7° · 179,2° |
+
+El motivo que más pesa es distinto en cada una: `visibility` baja en la rodilla
+(33,6 %), velocidad angular en el hombro (21,1 %) y en el codo (14,0 %),
+intercambio sospechado en el codo (9,0 %).
+
+**La rodilla es la medición menos confiable de las tres**: es la que más
+marcados acumula (36,0 %, casi todo `visibility` baja) y la que menos rango
+recorre (139° a 180°). Ese rango es compatible con la flexión moderada del
+batido de crol, así que no se puede decidir desde acá si describe el movimiento
+o si el tobillo está mal estimado: hace falta validación contra anotación
+manual.
+
+#### La `visibility` no predice si el ángulo es válido
+
+Es el hallazgo más importante de esta etapa, y va en contra de lo que se
+esperaría de un puntaje de confianza. Los números de abajo son de la primera
+corrida de ángulos, cuando las únicas banderas eran las heredadas de los
+landmarks:
+
+- **El codo tomaba valores que el cuerpo no puede hacer.** Nueve ángulos (1,5 %)
+  por debajo de los 35° que deja la flexión máxima del codo —hay valores de
+  5,2°, 6,9° y 13,7°— y **siete de esos nueve no quedaban marcados por ningún
+  motivo**: la muñeca tenía `visibility` entre **0,40 y 0,57**, cómodamente por
+  encima del umbral de reporte de 0,3.
+- **La correlación entre la `visibility` mínima de los tres landmarks y el
+  ángulo resultante es 0,055**, sobre 603 mediciones. Es decir: ninguna. Saber
+  que MediaPipe está seguro de dónde puso el punto no dice nada sobre si el
+  ángulo derivado de ese punto tiene sentido.
+
+De ahí salen dos consecuencias para el proyecto:
+
+1. **Las banderas heredadas de los landmarks son necesarias pero no
+   suficientes.** De ahí los dos criterios que miran la magnitud derivada y no
+   el dato de origen: `fuera_de_rango_en_el_plano_medido` y `velocidad_angular`.
+   Con los dos activos, **ocho de esos nueve valores quedan marcados**. El que
+   queda mide 32,6°, está por encima del piso adoptado de 30° y cae en el medio
+   de una excursión de siete fotogramas, donde tampoco hay salto que detectar.
+2. **Es un argumento directo a favor de validar contra anotación manual.** Si el
+   puntaje de confianza del modelo no separa las mediciones buenas de las
+   imposibles, el único juez disponible es un humano marcando fotogramas. Sin
+   eso no hay forma de decir cuánto error tiene una medición, que es el aporte
+   que este proyecto se propone.
+
+**Marcar lo grosero no deja limpio lo demás.** La mediana de velocidad angular
+del codo es de 6,1° por fotograma y el pico que implica la brazada —una
+sinusoide a 0,47 Hz con la excursión medida de 97°— es de 4,8°. O sea que la
+mitad de la serie se mueve más rápido de lo que el movimiento explica. El umbral
+de 30° por fotograma marca el 14 % de los ángulos de codo; que el 86 % restante
+no esté marcado no quiere decir que esté bien medido.
 
 ## Limitaciones conocidas del enfoque
 

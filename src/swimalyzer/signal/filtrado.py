@@ -64,6 +64,79 @@ class ErrorDeFiltrado(Exception):
     """Los parámetros de filtrado no se pueden aplicar a estos datos."""
 
 
+@dataclass(frozen=True)
+class SeriesFiltradas(SeriesDeLandmarks):
+    """Trayectorias ya filtradas, en píxeles, con las banderas de cada muestra.
+
+    Las banderas son por muestra (fotograma, landmark) y dicen qué le pasó al
+    dato: si se rellenó por interpolación, si llegó a pasar por el filtro y si
+    el fotograma quedó sospechado de intercambio izquierda/derecha. Viajan con
+    los datos hasta las métricas, que las heredan.
+    """
+
+    interpolado: np.ndarray
+    filtrado: np.ndarray
+    intercambio_sospechado: np.ndarray
+
+
+def cargar_filtrado(directorio: str | Path) -> SeriesFiltradas:
+    """Lee ``landmarks_filtrados.parquet`` y su metadata.
+
+    Las coordenadas ya vienen en píxeles del Parquet filtrado: acá no se
+    convierte nada. Los fps y la resolución salen de la metadata de la
+    extracción, que el filtrado guarda anidada dentro de la suya.
+    """
+    directorio = Path(directorio)
+    archivo = directorio / NOMBRE_FILTRADO
+    if not archivo.is_file():
+        raise ErrorDeFiltrado(
+            f"no hay landmarks filtrados en {directorio} (falta {NOMBRE_FILTRADO})"
+        )
+
+    metadata = json.loads((directorio / NOMBRE_METADATA).read_text(encoding="utf-8"))
+    extraccion = (metadata.get("origen") or {}).get("metadata_extraccion")
+    if not extraccion:
+        # Si el filtrado se escribió en otro directorio y la metadata de origen
+        # no quedó anidada, la de la extracción tiene que estar al lado.
+        extraccion = json.loads((directorio / "metadata.json").read_text(encoding="utf-8"))
+    ancho, alto = extraccion["video"]["resolucion_inferencia"]
+    fps = float(extraccion["video"]["fps"])
+
+    tabla = pq.read_table(archivo)
+    faltantes = [campo.name for campo in ESQUEMA_FILTRADO if campo.name not in tabla.column_names]
+    if faltantes:
+        raise ErrorDeFiltrado(
+            f"{archivo} no es un Parquet de landmarks filtrados: faltan {faltantes}"
+        )
+
+    datos = {nombre: np.asarray(tabla.column(nombre)) for nombre in tabla.column_names}
+    fotogramas = int(datos["frame"].max()) + 1
+    forma = (fotogramas, CANTIDAD_LANDMARKS)
+    indice = (datos["frame"].astype(np.int64), datos["landmark_id"].astype(np.int64))
+
+    def matriz(columna: str, relleno: Any, tipo: Any) -> np.ndarray:
+        salida = np.full(forma, relleno, dtype=tipo)
+        salida[indice] = datos[columna].astype(tipo)
+        return salida
+
+    timestamps = np.zeros(fotogramas, dtype=np.int64)
+    timestamps[datos["frame"].astype(np.int64)] = datos["timestamp_ms"].astype(np.int64)
+
+    return SeriesFiltradas(
+        x=matriz("x_px", np.nan, np.float64),
+        y=matriz("y_px", np.nan, np.float64),
+        visibility=matriz("visibility", np.nan, np.float64),
+        timestamp_ms=timestamps,
+        fps=fps,
+        ancho=ancho,
+        alto=alto,
+        origen=directorio,
+        interpolado=matriz("interpolado", False, bool),
+        filtrado=matriz("filtrado", False, bool),
+        intercambio_sospechado=matriz("intercambio_sospechado", False, bool),
+    )
+
+
 def longitud_minima_para_filtfilt(orden: int) -> int:
     """Muestras mínimas que necesita ``filtfilt`` con un Butterworth de ese orden.
 
