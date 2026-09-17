@@ -53,11 +53,12 @@ Tecnología y Ciencias Aplicadas, U.N.Ca.), en etapa piloto.
   en píxeles con un Butterworth sin desfase y marca los fotogramas sospechados
   de intercambio, sin corregirlos. No descarta nada por `visibility`.
 - **`swimalyzer angulos`**: calcula los ángulos articulares del lado cercano a
-  la cámara (codo, hombro y rodilla izquierdos) sobre coordenadas en píxeles.
-  Cada ángulo hereda las banderas de sus tres landmarks: queda marcado si a
-  alguno le faltó pasar por el filtro, se interpoló, quedó sospechado de
-  intercambio o tiene `visibility` por debajo del umbral de reporte. Marcar no
-  es descartar: el valor se guarda igual.
+  la cámara (codo, hombro y rodilla izquierdos) sobre coordenadas en píxeles y
+  los marca con seis criterios. Cuatro los hereda de sus tres landmarks —sin
+  filtrar, interpolado, intercambio sospechado, `visibility` por debajo del
+  umbral— y dos miran el ángulo ya calculado: si cae fuera del rango que la
+  articulación puede recorrer y si salta más de lo que el cuerpo puede moverse
+  entre dos fotogramas. Marcar no es descartar: el valor se guarda igual.
 - **`scripts/informe_angulos.py`**: informe reproducible de los ángulos —
   cobertura, porcentaje marcado desglosado por motivo, rango de valores de cada
   articulación y la serie temporal del ángulo de codo.
@@ -143,9 +144,16 @@ que quedan sin filtrar en lugar de desaparecer) e `intercambio_sospechado`.
 `angulos` escribe `angulos.parquet` con una fila por articulación por fotograma:
 el ángulo en grados, la peor `visibility` de los tres landmarks que lo definen y
 una bandera por motivo de marcado (`sin_filtrar`, `interpolado`,
-`intercambio_sospechado`, `visibility_baja`). El ángulo es el **ángulo incluido
-en el vértice**, de 0° a 180°, con 180° el segmento extendido; los fotogramas
-sin los tres landmarks quedan en `NaN`.
+`intercambio_sospechado`, `visibility_baja`, `fuera_de_rango_en_el_plano_medido`
+y `velocidad_angular`). El ángulo es el **ángulo incluido en el vértice**, de 0°
+a 180°, con 180° el segmento extendido; los fotogramas sin los tres landmarks
+quedan en `NaN`.
+
+El motivo se llama `fuera_de_rango_en_el_plano_medido` y no algo que culpe al
+landmark porque un valor fuera del rango anatómico puede venir de una mala
+estimación **o** de escorzo extremo: la proyección puede achicar el ángulo tanto
+como agrandarlo, y con una sola cámara no se distingue cuál de los dos es. Lo
+que sí se sabe es que esa medición no representa a la articulación.
 
 ### El recorte del video de desarrollo
 
@@ -286,13 +294,13 @@ fotogramas** (57,6 %); el resto no tiene los tres landmarks.
 
 | articulación | marcados | rango sin marcar (mín · mediana · máx) |
 |---|---|---|
-| codo izq | 27,8 % | 5,2° · 159,9° · 179,9° |
-| hombro izq | 16,3 % | 0,0° · 125,8° · 180,0° |
+| codo izq | 37,8 % | 32,6° · 161,3° · 179,9° |
+| hombro izq | 32,9 % | 0,0° · 138,7° · 180,0° |
 | rodilla izq | 36,0 % | 139,0° · 171,7° · 179,2° |
 
-El motivo de marcado que más pesa es distinto en cada una: `visibility` baja en
-la rodilla (33,6 %) y en el codo (16,3 %), intercambio sospechado en el codo
-(9,0 %) y en el hombro (7,2 %).
+El motivo que más pesa es distinto en cada una: `visibility` baja en la rodilla
+(33,6 %), velocidad angular en el hombro (21,1 %) y en el codo (14,0 %),
+intercambio sospechado en el codo (9,0 %).
 
 **La rodilla es la medición menos confiable de las tres**: es la que más
 marcados acumula (36,0 %, casi todo `visibility` baja) y la que menos rango
@@ -304,11 +312,13 @@ manual.
 #### La `visibility` no predice si el ángulo es válido
 
 Es el hallazgo más importante de esta etapa, y va en contra de lo que se
-esperaría de un puntaje de confianza:
+esperaría de un puntaje de confianza. Los números de abajo son de la primera
+corrida de ángulos, cuando las únicas banderas eran las heredadas de los
+landmarks:
 
-- **El codo toma valores que el cuerpo no puede hacer.** Nueve ángulos (1,5 %)
-  caen por debajo de los 35° que deja la flexión máxima del codo —hay valores de
-  5,2°, 6,9° y 13,7°— y **siete de esos nueve no están marcados por ningún
+- **El codo tomaba valores que el cuerpo no puede hacer.** Nueve ángulos (1,5 %)
+  por debajo de los 35° que deja la flexión máxima del codo —hay valores de
+  5,2°, 6,9° y 13,7°— y **siete de esos nueve no quedaban marcados por ningún
   motivo**: la muñeca tenía `visibility` entre **0,40 y 0,57**, cómodamente por
   encima del umbral de reporte de 0,3.
 - **La correlación entre la `visibility` mínima de los tres landmarks y el
@@ -319,22 +329,23 @@ esperaría de un puntaje de confianza:
 De ahí salen dos consecuencias para el proyecto:
 
 1. **Las banderas heredadas de los landmarks son necesarias pero no
-   suficientes.** Hacen falta criterios que miren la magnitud derivada y no solo
-   el dato de origen: si el valor cae fuera del rango que la articulación puede
-   recorrer, y si cambia más rápido de lo que el cuerpo puede moverse.
+   suficientes.** De ahí los dos criterios que miran la magnitud derivada y no
+   el dato de origen: `fuera_de_rango_en_el_plano_medido` y `velocidad_angular`.
+   Con los dos activos, **ocho de esos nueve valores quedan marcados**. El que
+   queda mide 32,6°, está por encima del piso adoptado de 30° y cae en el medio
+   de una excursión de siete fotogramas, donde tampoco hay salto que detectar.
 2. **Es un argumento directo a favor de validar contra anotación manual.** Si el
    puntaje de confianza del modelo no separa las mediciones buenas de las
    imposibles, el único juez disponible es un humano marcando fotogramas. Sin
    eso no hay forma de decir cuánto error tiene una medición, que es el aporte
    que este proyecto se propone.
 
-La velocidad angular separa mejor esos casos: el codo se mueve una mediana de
-6,1° por fotograma (183 °/s), y seis de los nueve valores imposibles entran o
-salen con un salto de entre 47° y 132° en un solo fotograma. Los otros tres
-están en el medio de una excursión que dura varios fotogramas, donde no hay
-salto que detectar: los dos criterios se complementan, ninguno alcanza solo. La
-distribución completa y el costo de cada umbral están en `angulos/informe.md`;
-el umbral todavía no está elegido.
+**Marcar lo grosero no deja limpio lo demás.** La mediana de velocidad angular
+del codo es de 6,1° por fotograma y el pico que implica la brazada —una
+sinusoide a 0,47 Hz con la excursión medida de 97°— es de 4,8°. O sea que la
+mitad de la serie se mueve más rápido de lo que el movimiento explica. El umbral
+de 30° por fotograma marca el 14 % de los ángulos de codo; que el 86 % restante
+no esté marcado no quiere decir que esté bien medido.
 
 ## Limitaciones conocidas del enfoque
 

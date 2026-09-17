@@ -30,8 +30,10 @@ cuadrado, y un mismo ángulo real daría distinto según su orientación.
 
 **Es un ángulo proyectado, no el ángulo real.** La medición vive en el plano de
 la imagen. Cuando el segmento sale del plano —y en crol sale, porque el cuerpo
-rota sobre su eje— el ángulo proyectado es menor que el real. Un valor bajo
-puede ser flexión o puede ser escorzo, y con una sola cámara no se distinguen.
+rota sobre su eje— el ángulo proyectado difiere del real, y puede quedar tanto
+por debajo como por encima: dos segmentos casi alineados con el eje de la cámara
+proyectan a casi 180°. Un valor bajo puede ser flexión o puede ser escorzo, y
+con una sola cámara no se distinguen.
 
 **Un ángulo es tan confiable como su peor componente.** Cada ángulo hereda las
 banderas de sus tres landmarks: si a alguno le faltó pasar por el filtro, se
@@ -54,7 +56,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from swimalyzer.config import Configuracion
+from swimalyzer.config import Configuracion, ErrorDeConfiguracion
 from swimalyzer.io.metadata import encabezado_de_corrida, escribir_metadata, sha256_de_archivo
 from swimalyzer.io.persistencia import COMPRESION
 from swimalyzer.pose import landmarks as lm
@@ -78,6 +80,10 @@ class Articulacion:
     """
 
     nombre: str
+    #: Tipo de articulación ("codo", "hombro", "rodilla"), sin el lado: es la
+    #: clave del rango anatómico, que no depende de si es la izquierda o la
+    #: derecha.
+    tipo: str
     proximal: int
     vertice: int
     distal: int
@@ -95,9 +101,9 @@ class Articulacion:
 #: derecho no se calcula: con este material su codo no tiene medición usable en
 #: el 96 % de los fotogramas (ver el informe de caracterización).
 ARTICULACIONES: tuple[Articulacion, ...] = (
-    Articulacion("codo_izq", lm.HOMBRO_IZQ, lm.CODO_IZQ, lm.MUNECA_IZQ),
-    Articulacion("hombro_izq", lm.CODO_IZQ, lm.HOMBRO_IZQ, lm.CADERA_IZQ),
-    Articulacion("rodilla_izq", lm.CADERA_IZQ, lm.RODILLA_IZQ, lm.TOBILLO_IZQ),
+    Articulacion("codo_izq", "codo", lm.HOMBRO_IZQ, lm.CODO_IZQ, lm.MUNECA_IZQ),
+    Articulacion("hombro_izq", "hombro", lm.CODO_IZQ, lm.HOMBRO_IZQ, lm.CADERA_IZQ),
+    Articulacion("rodilla_izq", "rodilla", lm.CADERA_IZQ, lm.RODILLA_IZQ, lm.TOBILLO_IZQ),
 )
 
 #: Por qué puede quedar marcado un ángulo. El orden es el del informe.
@@ -106,6 +112,8 @@ MOTIVOS: tuple[str, ...] = (
     "interpolado",
     "intercambio_sospechado",
     "visibility_baja",
+    "fuera_de_rango_en_el_plano_medido",
+    "velocidad_angular",
 )
 
 ESQUEMA_ANGULOS = pa.schema(
@@ -123,6 +131,8 @@ ESQUEMA_ANGULOS = pa.schema(
         pa.field("interpolado", pa.bool_(), nullable=False),
         pa.field("intercambio_sospechado", pa.bool_(), nullable=False),
         pa.field("visibility_baja", pa.bool_(), nullable=False),
+        pa.field("fuera_de_rango_en_el_plano_medido", pa.bool_(), nullable=False),
+        pa.field("velocidad_angular", pa.bool_(), nullable=False),
         pa.field("marcado", pa.bool_(), nullable=False),
     ]
 )
@@ -181,9 +191,19 @@ class SerieDeAngulo:
 
 
 def calcular_angulo(
-    series: SeriesFiltradas, articulacion: Articulacion, umbral_visibility: float
+    series: SeriesFiltradas,
+    articulacion: Articulacion,
+    umbral_visibility: float,
+    rango_anatomico: tuple[float, float],
+    velocidad_maxima: float,
 ) -> SerieDeAngulo:
-    """Calcula una articulación sobre toda la corrida y hereda sus banderas."""
+    """Calcula una articulación sobre toda la corrida y la marca con sus criterios.
+
+    Cuatro de los seis motivos se heredan de los landmarks. Los otros dos miran
+    el ángulo ya calculado, porque sobre este material las banderas heredadas
+    resultaron necesarias pero no suficientes: la ``visibility`` de MediaPipe no
+    predice si el ángulo derivado tiene sentido.
+    """
     puntos = [
         np.stack([series.x[:, landmark], series.y[:, landmark]], axis=1)
         for landmark in articulacion.landmarks
@@ -199,6 +219,10 @@ def calcular_angulo(
     visibility_minima = np.where(np.isinf(visibility_minima), np.nan, visibility_minima)
     with np.errstate(invalid="ignore"):
         baja = np.any(sin_visibility | (visibility < umbral_visibility), axis=1)
+    minimo, maximo = rango_anatomico
+    with np.errstate(invalid="ignore"):
+        fuera_de_rango = (grados < minimo) | (grados > maximo)
+        rapido = salto_adyacente(velocidad_angular(grados)) >= velocidad_maxima
     motivos = {
         # "sin filtrar" es la ausencia de la bandera: el tramo era más corto
         # que el mínimo de filtfilt y quedó con la señal cruda.
@@ -206,6 +230,17 @@ def calcular_angulo(
         "interpolado": np.any(series.interpolado[:, indices], axis=1),
         "intercambio_sospechado": np.any(series.intercambio_sospechado[:, indices], axis=1),
         "visibility_baja": baja,
+        # El nombre dice exactamente lo que se sabe. Un valor fuera del rango
+        # que la articulación puede recorrer puede venir de un landmark mal
+        # estimado o de escorzo extremo —con el segmento apuntando a la cámara,
+        # la proyección puede achicar el ángulo tanto como agrandarlo—, y con
+        # una sola cámara no se distingue cuál de los dos es. En ambos casos la
+        # medición no representa a la articulación, que es lo que justifica
+        # marcarla; culpar al landmark sería afirmar más de lo que se sabe.
+        "fuera_de_rango_en_el_plano_medido": fuera_de_rango,
+        # Un salto que el cuerpo no puede hacer en 1/fps de segundo, mirando el
+        # que entra y el que sale para señalar el fotograma y no la transición.
+        "velocidad_angular": rapido,
     }
     sin_dato = np.isnan(grados)
     # Donde no hay ángulo no hay nada que marcar: el hueco ya se informa aparte.
@@ -311,8 +346,32 @@ class ResultadoAngulos:
     fotogramas: int
     fps: float
     umbral_visibility: float
+    rangos_anatomicos: dict[str, tuple[float, float]]
+    velocidad_maxima: float
     series: dict[str, SerieDeAngulo]
     resumenes: dict[str, ResumenDeArticulacion]
+
+
+def _rangos_anatomicos(configuracion: Configuracion) -> dict[str, tuple[float, float]]:
+    """El rango de cada articulación, buscado por tipo y devuelto por nombre.
+
+    La configuración los guarda por tipo ("codo") porque el rango de movimiento
+    no depende del lado. Si falta el tipo de alguna articulación que se calcula,
+    es un error de configuración y no un valor por defecto: inventar un rango
+    permisivo apagaría el criterio en silencio.
+    """
+    por_tipo = configuracion.exigir("calidad.rango_anatomico_grados")
+    rangos: dict[str, tuple[float, float]] = {}
+    for articulacion in ARTICULACIONES:
+        rango_del_tipo = por_tipo.get(articulacion.tipo)
+        if rango_del_tipo is None:
+            raise ErrorDeConfiguracion(
+                f"falta el rango anatómico de '{articulacion.tipo}' en "
+                f"calidad.rango_anatomico_grados, que hace falta para "
+                f"'{articulacion.nombre}'"
+            )
+        rangos[articulacion.nombre] = (rango_del_tipo.minimo, rango_del_tipo.maximo)
+    return rangos
 
 
 def calcular_angulos_de_corrida(
@@ -324,9 +383,14 @@ def calcular_angulos_de_corrida(
     destino.mkdir(parents=True, exist_ok=True)
 
     umbral = configuracion.exigir("calidad.umbral_visibility_reporte")
+    rangos = _rangos_anatomicos(configuracion)
+    velocidad_maxima = configuracion.exigir("calidad.velocidad_angular_maxima_grados_por_fotograma")
+
     series = cargar_filtrado(corrida)
     calculadas = {
-        articulacion.nombre: calcular_angulo(series, articulacion, umbral)
+        articulacion.nombre: calcular_angulo(
+            series, articulacion, umbral, rangos[articulacion.nombre], velocidad_maxima
+        )
         for articulacion in ARTICULACIONES
     }
 
@@ -339,6 +403,8 @@ def calcular_angulos_de_corrida(
         fotogramas=series.cantidad_fotogramas,
         fps=series.fps,
         umbral_visibility=umbral,
+        rangos_anatomicos=rangos,
+        velocidad_maxima=velocidad_maxima,
         series=calculadas,
         resumenes={nombre: resumir(serie) for nombre, serie in calculadas.items()},
     )
@@ -424,6 +490,11 @@ def _metadata(
         },
         "parametros": {
             "umbral_visibility_reporte": resultado.umbral_visibility,
+            "rango_anatomico_grados": {
+                nombre: {"minimo": minimo, "maximo": maximo}
+                for nombre, (minimo, maximo) in resultado.rangos_anatomicos.items()
+            },
+            "velocidad_angular_maxima_grados_por_fotograma": resultado.velocidad_maxima,
             "lado": "izquierdo (cercano a la cámara)",
             "coordenadas": "pixeles",
             "convencion": "angulo incluido en el vertice, 0 a 180 grados; 180 = extendido",

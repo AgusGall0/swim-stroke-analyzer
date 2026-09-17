@@ -38,6 +38,8 @@ ETIQUETAS_DE_MOTIVO: dict[str, str] = {
     "interpolado": "interpolado",
     "intercambio_sospechado": "intercambio sospechado",
     "visibility_baja": "visibility baja",
+    "fuera_de_rango_en_el_plano_medido": "fuera de rango",
+    "velocidad_angular": "velocidad angular",
 }
 
 
@@ -142,8 +144,8 @@ def figura_serie(
     figura.text(
         0.0,
         -0.085,
-        "Ángulo proyectado en el plano de la imagen: con el cuerpo rotado, el valor medido "
-        "es menor que el real.",
+        "Ángulo proyectado en el plano de la imagen: con el segmento fuera del plano, el valor "
+        "medido puede quedar por debajo o por encima del real.",
         fontsize=7.5,
         color=TINTA_SECUNDARIA,
     )
@@ -214,7 +216,7 @@ def figura_rangos(series: dict[str, SerieDeAngulo], destino: Path) -> Path:
     figura.text(
         0.0,
         -0.06,
-        "Ángulo proyectado en el plano de la imagen.",
+        "Ángulo proyectado en el plano de la imagen: el valor medido puede diferir del real.",
         fontsize=7.5,
         color=TINTA_SECUNDARIA,
     )

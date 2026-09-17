@@ -13,9 +13,11 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 Probabilidad = Annotated[float, Field(ge=0, le=1)]
+#: Un ángulo incluido: por construcción no puede salirse de 0 a 180 grados.
+Grados = Annotated[float, Field(ge=0, le=180)]
 
 
 class ErrorDeConfiguracion(Exception):
@@ -51,9 +53,28 @@ class Video(_Seccion):
     recorte: Recorte | None
 
 
+class RangoAnatomico(_Seccion):
+    """Valores que una articulación puede tomar, en grados de ángulo incluido."""
+
+    minimo: Grados
+    maximo: Grados
+
+    @model_validator(mode="after")
+    def _minimo_por_debajo_del_maximo(self) -> RangoAnatomico:
+        if self.minimo >= self.maximo:
+            raise ValueError(
+                f"el mínimo ({self.minimo}) tiene que ser menor que el máximo ({self.maximo})"
+            )
+        return self
+
+
 class Calidad(_Seccion):
     #: Criterio de reporte, no de descarte: marca mediciones poco confiables.
     umbral_visibility_reporte: Probabilidad | None
+    #: Por tipo de articulación ("codo", "hombro", "rodilla"), no por lado: el
+    #: rango de movimiento del codo derecho es el mismo que el del izquierdo.
+    rango_anatomico_grados: dict[str, RangoAnatomico] | None
+    velocidad_angular_maxima_grados_por_fotograma: Annotated[float, Field(gt=0)] | None
 
 
 class Filtrado(_Seccion):

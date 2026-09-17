@@ -39,21 +39,15 @@ ARTICULACION_DE_REFERENCIA = "codo_izq"
 #: número, no el número: elegirlo es una decisión abierta.
 UMBRALES_DE_VELOCIDAD: tuple[float, ...] = (10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 80.0)
 
+#: Frecuencia de brazada del material, en Hz: el pico dominante de la PSD en el
+#: informe de caracterización de esta corrida. Se usa solo para calcular con qué
+#: velocidad se movería el ángulo si la brazada fuera una oscilación sinusoidal,
+#: que es la referencia contra la cual se lee la velocidad medida. Sobre otro
+#: material hay que volver a mirarla.
+FRECUENCIA_DE_BRAZADA_HZ = 0.47
+
 #: Percentiles de la distribución de velocidad angular que van al informe.
 PERCENTILES_DE_VELOCIDAD: tuple[float, ...] = (50, 75, 90, 95, 99)
-
-#: Piso anatómico aproximado de cada articulación, en grados de ángulo
-#: incluido, para contar cuántas mediciones caen por debajo de lo que el
-#: cuerpo puede hacer. Salen del rango de movimiento habitual (flexión máxima
-#: de unos 145° en codo y unos 140° en rodilla, que dejan un ángulo incluido
-#: de 35° y 40°). Son **parámetros del informe**, no umbrales del pipeline: no
-#: filtran nada, solo cuentan.
-PISO_ANATOMICO_GRADOS: dict[str, float] = {
-    "codo_izq": 35.0,
-    "rodilla_izq": 40.0,
-    # El hombro llega a juntar el brazo con el tronco: no tiene piso útil.
-    "hombro_izq": 0.0,
-}
 
 
 def _tabla(encabezados: list[str], filas: list[list[str]]) -> str:
@@ -73,6 +67,8 @@ def _resumir_velocidad(serie: SerieDeAngulo, fps: float, piso: float) -> dict:
     """Distribución del salto entre fotogramas y qué marcaría cada umbral."""
     velocidad = velocidad_angular(serie.grados)
     valores = velocidad[~np.isnan(velocidad)]
+    con_angulo = serie.grados[serie.con_dato]
+    excursion = float(np.ptp(np.percentile(con_angulo, (5, 95)))) if con_angulo.size else 0.0
     salto = salto_adyacente(velocidad)
     con_dato = serie.con_dato
     with np.errstate(invalid="ignore"):
@@ -103,6 +99,13 @@ def _resumir_velocidad(serie: SerieDeAngulo, fps: float, piso: float) -> dict:
     return {
         "transiciones": int(valores.size),
         "media": float(valores.mean()),
+        # Con qué velocidad se movería este ángulo si la brazada fuera una
+        # sinusoide de la excursión medida: 2*pi*f*amplitud, pasado a grados por
+        # fotograma. No es una cota, es una referencia para leer los números.
+        "pico_sinusoidal_grados_por_fotograma": float(
+            2 * np.pi * FRECUENCIA_DE_BRAZADA_HZ * excursion / 2 / fps
+        ),
+        "excursion_grados": float(excursion),
         "maximo": float(valores.max()),
         "percentiles": percentiles,
         "fuera_del_piso": int(fuera_del_piso.sum()),
@@ -134,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         "corrida": str(args.corrida),
         "video": video,
         "umbral_visibility_reporte": metadata["parametros"]["umbral_visibility_reporte"],
+        "velocidad_maxima": metadata["parametros"]["velocidad_angular_maxima_grados_por_fotograma"],
         "articulaciones": metadata["parametros"]["articulaciones"],
         "tramo_analizado": {
             "articulacion": ARTICULACION_DE_REFERENCIA,
@@ -145,7 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     for nombre, serie in series.items():
         detalle = resumenes[nombre]
-        piso = PISO_ANATOMICO_GRADOS[nombre]
+        rango_anatomico = metadata["parametros"]["rango_anatomico_grados"][nombre]
+        piso = float(rango_anatomico["minimo"])
         with np.errstate(invalid="ignore"):
             debajo_del_piso = serie.con_dato & (serie.grados < piso)
         inicio, fin = tramo
@@ -166,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
             "rango_grados_sin_marcar": detalle.rango_sin_marcar,
             "rango_grados_en_el_tramo": rango(serie.grados[inicio:fin]),
             "velocidad_angular": _resumir_velocidad(serie, fps, piso),
-            "piso_anatomico_grados": piso,
+            "rango_anatomico_grados": rango_anatomico,
             "por_debajo_del_piso": {
                 "fotogramas": int(debajo_del_piso.sum()),
                 "tasa": (
@@ -223,8 +228,10 @@ def _informe(resumen: dict) -> str:
         ),
         "",
         "Es un ángulo **proyectado** en el plano de la imagen. Con el cuerpo rotado sobre su",
-        "eje —y en crol rota— el segmento sale del plano y el ángulo medido es menor que el",
-        "real. Con una sola cámara, flexión y escorzo no se distinguen.",
+        "eje —y en crol rota— el segmento sale del plano y el ángulo medido difiere del real:",
+        "puede quedar por debajo o por encima, porque dos segmentos casi alineados con el eje",
+        "de la cámara proyectan a casi 180°. Con una sola cámara, flexión y escorzo no se",
+        "distinguen.",
         "",
         "## 2. Cobertura",
         "",
@@ -250,24 +257,33 @@ def _informe(resumen: dict) -> str:
         "",
         "## 3. Qué porcentaje queda marcado, y por qué",
         "",
-        "Un ángulo es tan confiable como su peor componente: hereda las banderas de sus tres",
-        "landmarks. Los porcentajes son **sobre los ángulos calculados**, no sobre los",
-        f"fotogramas del video. El umbral de visibility de reporte es "
-        f"{resumen['umbral_visibility_reporte']:g}.",
+        "Cuatro motivos se heredan de los landmarks —un ángulo es tan confiable como su peor",
+        "componente— y dos miran el ángulo ya calculado. Los porcentajes son **sobre los",
+        "ángulos calculados**, no sobre los fotogramas del video. El umbral de visibility de",
+        f"reporte es {resumen['umbral_visibility_reporte']:g} y el salto máximo, "
+        f"{resumen['velocidad_maxima']:g}° por fotograma.",
         "",
         _tabla(
-            ["articulación", "marcados", *(ETIQUETAS_DE_MOTIVO[m] for m in MOTIVOS)],
+            ["motivo", *resumen["por_articulacion"]],
             [
                 [
-                    nombre,
-                    f"**{datos['marcados']} ({datos['tasa_marcados']:.1%})**",
+                    ETIQUETAS_DE_MOTIVO[motivo],
                     *(
                         f"{datos['por_motivo'][motivo]['fotogramas']} "
                         f"({datos['por_motivo'][motivo]['tasa']:.1%})"
-                        for motivo in MOTIVOS
+                        for datos in resumen["por_articulacion"].values()
                     ),
                 ]
-                for nombre, datos in resumen["por_articulacion"].items()
+                for motivo in MOTIVOS
+            ]
+            + [
+                [
+                    "**marcado por al menos uno**",
+                    *(
+                        f"**{datos['marcados']} ({datos['tasa_marcados']:.1%})**"
+                        for datos in resumen["por_articulacion"].values()
+                    ),
+                ]
             ],
         ),
         "",
@@ -303,25 +319,34 @@ def _informe(resumen: dict) -> str:
         "",
         "![rangos](rangos.png)",
         "",
-        "### Valores por debajo de lo anatómicamente posible",
+        "### Valores fuera del rango anatómico",
         "",
-        "El piso de referencia es el ángulo incluido que queda con la articulación en flexión",
-        "máxima (unos 35° en el codo y 40° en la rodilla). Nada se filtra por esto: se cuenta.",
+        "El rango sale de `config.yaml` y es el que la articulación puede recorrer según los",
+        "valores de referencia de goniometría (AAOS; Norkin & White), convertidos a ángulo",
+        "incluido con `180 − flexión`. Nada se filtra por esto: se marca y se cuenta.",
         "",
         _tabla(
-            ["articulación", "piso", "por debajo", "de esos, marcados"],
+            ["articulación", "rango", "por debajo del mínimo", "de esos, marcados por otro motivo"],
             [
                 [
                     nombre,
-                    f"{datos['piso_anatomico_grados']:.0f}°",
+                    f"{datos['rango_anatomico_grados']['minimo']:.0f}° a "
+                    f"{datos['rango_anatomico_grados']['maximo']:.0f}°",
                     f"{datos['por_debajo_del_piso']['fotogramas']} "
                     f"({datos['por_debajo_del_piso']['tasa']:.1%})",
                     str(datos["por_debajo_del_piso"]["marcados"]),
                 ]
                 for nombre, datos in resumen["por_articulacion"].items()
-                if datos["piso_anatomico_grados"] > 0
             ],
         ),
+        "",
+        "Un valor fuera del rango **no prueba que el landmark esté mal**. La proyección puede",
+        "achicar el ángulo tanto como agrandarlo: con el segmento apuntando a la cámara, un",
+        "codo realmente flexionado a 90° puede proyectar cualquier cosa. Puede ser un landmark",
+        "mal estimado o escorzo extremo, y con una sola cámara no se distingue cuál. Lo que sí",
+        "se sabe es que la medición no representa a la articulación, y eso alcanza para",
+        "marcarla. Por eso el motivo se llama `fuera_de_rango_en_el_plano_medido` y no algo",
+        "que culpe al landmark.",
         "",
         "## 5. Velocidad angular",
         "",
@@ -329,6 +354,15 @@ def _informe(resumen: dict) -> str:
         "la evidencia para elegir un umbral de salto: un artefacto de un fotograma entra y sale",
         "con dos saltos grandes, mientras que el movimiento real está acotado por la frecuencia",
         "de corte del filtro. El primer fotograma de cada tramo no tiene con qué compararse.",
+        "",
+        f"**La mediana del codo ({velocidad_del_codo['percentiles']['p50']:.1f}° por fotograma) ya",
+        "supera el pico que implica la brazada "
+        f"({velocidad_del_codo['pico_sinusoidal_grados_por_fotograma']:.1f}° por fotograma: una",
+        f"oscilación sinusoidal a {FRECUENCIA_DE_BRAZADA_HZ:g} Hz con la excursión medida de "
+        f"{velocidad_del_codo['excursion_grados']:.0f}°).** El umbral elegido marca lo grosero:",
+        "que un ángulo no quede marcado por velocidad **no significa que esté limpio**. La mitad",
+        "de la serie se mueve más rápido de lo que la brazada explica, y eso es ruido que el",
+        "filtro dejó pasar.",
         "",
         _tabla(
             ["articulación", "n", "media", *(f"p{p:g}" for p in PERCENTILES_DE_VELOCIDAD), "máx"],
@@ -348,7 +382,7 @@ def _informe(resumen: dict) -> str:
         ),
         "",
         "Qué marcaría cada umbral, contando el fotograma cuando el salto que entra **o** el que",
-        "sale lo supera. La última columna dice cuántos de los ángulos por debajo del piso",
+        "sale lo supera. La última columna dice cuántos de los ángulos por debajo del mínimo",
         "anatómico alcanzaría a señalar: los dos criterios no se solapan del todo.",
         "",
         _tabla(
@@ -356,7 +390,7 @@ def _informe(resumen: dict) -> str:
                 "umbral (°/fotograma)",
                 "equivale a (°/s)",
                 *(f"{nombre} marcados" for nombre in resumen["por_articulacion"]),
-                "codo: fuera del piso capturados",
+                "codo: fuera de rango capturados",
             ],
             [
                 [

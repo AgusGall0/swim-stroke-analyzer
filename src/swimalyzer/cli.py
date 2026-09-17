@@ -277,42 +277,38 @@ def _comando_filtrar(args: argparse.Namespace) -> int:
 def _resumir_angulos(resultado: ResultadoAngulos) -> None:
     tamano_kb = resultado.ruta_angulos.stat().st_size / 1024
     print(
-        f"Fotogramas: {resultado.fotogramas} · umbral de visibility para marcar: "
-        f"{resultado.umbral_visibility:g}"
+        f"Fotogramas: {resultado.fotogramas} · visibility mínima para no marcar: "
+        f"{resultado.umbral_visibility:g} · salto máximo: "
+        f"{resultado.velocidad_maxima:g}°/fotograma"
     )
-    print("\nCobertura y marcado (el % de marcados es sobre los ángulos calculados):")
-    encabezado = f"  {'articulación':<12} {'calculados':>18} {'marcados':>16}   " + "  ".join(
-        f"{motivo:>13}" for motivo in MOTIVOS
-    )
-    print(encabezado)
-    for nombre, resumen in resultado.resumenes.items():
-        motivos = "  ".join(
-            f"{resumen.por_motivo[motivo] / resumen.con_dato if resumen.con_dato else 0:>12.1%}"
-            for motivo in MOTIVOS
-        )
-        print(
-            f"  {nombre:<12} {resumen.con_dato:>6} ({resumen.tasa_con_dato:>6.1%})"
-            f" {resumen.marcados:>6} ({resumen.tasa_marcados:>6.1%})   {motivos}"
-        )
-    print("  los motivos no son excluyentes: un ángulo puede estar marcado por varios")
 
-    print("\nRango de cada ángulo, en grados (180 = extendido):")
     for nombre, resumen in resultado.resumenes.items():
+        minimo, maximo = resultado.rangos_anatomicos[nombre]
+        print(f"\n{nombre}  (rango anatómico {minimo:g}° a {maximo:g}°)")
+        print(
+            f"  con ángulo: {resumen.con_dato} de {resumen.fotogramas} "
+            f"({resumen.tasa_con_dato:.1%})"
+        )
+        print(f"  marcados:   {resumen.marcados} ({resumen.tasa_marcados:.1%} de los calculados)")
+        for motivo in MOTIVOS:
+            cantidad = resumen.por_motivo[motivo]
+            tasa = cantidad / resumen.con_dato if resumen.con_dato else 0.0
+            print(f"    {motivo:<34} {cantidad:>4} ({tasa:>5.1%})")
         for etiqueta, valores in (
             ("todos", resumen.rango),
             ("sin marcar", resumen.rango_sin_marcar),
         ):
             if not valores.get("n"):
-                print(f"  {nombre:<12} {etiqueta:<11} sin datos")
+                print(f"  rango, {etiqueta:<11} sin datos")
                 continue
             print(
-                f"  {nombre:<12} {etiqueta:<11} n={valores['n']:>4}  "
-                f"min {valores['minimo']:>5.1f}  p5 {valores['p5']:>5.1f}  "
-                f"mediana {valores['p50']:>5.1f}  p95 {valores['p95']:>5.1f}  "
+                f"  rango, {etiqueta:<11} n={valores['n']:>4}  "
+                f"min {valores['minimo']:>5.1f}  mediana {valores['p50']:>5.1f}  "
                 f"max {valores['maximo']:>5.1f}"
             )
 
-    print(f"\nÁngulos:  {resultado.ruta_angulos} ({tamano_kb:.1f} KiB)")
+    print("\nLos motivos no son excluyentes: un ángulo puede estar marcado por varios.")
+    print(f"Ángulos:  {resultado.ruta_angulos} ({tamano_kb:.1f} KiB)")
     print(f"Metadata: {resultado.ruta_metadata}")
 
 

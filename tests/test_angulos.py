@@ -160,6 +160,26 @@ def _corrida_filtrada(tmp_path, configuracion, visibility_codo=0.8, detectado=No
     return tmp_path / "filtrada"
 
 
+def _con_rango_de_codo(configuracion, minimo: float):
+    rangos = dict(configuracion.calidad.rango_anatomico_grados)
+    rangos["codo"] = rangos["codo"].model_copy(update={"minimo": minimo})
+    return configuracion.model_copy(
+        update={
+            "calidad": configuracion.calidad.model_copy(update={"rango_anatomico_grados": rangos})
+        }
+    )
+
+
+def _con_velocidad_maxima(configuracion, grados_por_fotograma: float):
+    return configuracion.model_copy(
+        update={
+            "calidad": configuracion.calidad.model_copy(
+                update={"velocidad_angular_maxima_grados_por_fotograma": grados_por_fotograma}
+            )
+        }
+    )
+
+
 def test_el_parquet_de_angulos_tiene_su_esquema_y_una_fila_por_articulacion(
     tmp_path, configuracion
 ):
@@ -228,6 +248,68 @@ def test_el_angulo_hereda_la_interpolacion(tmp_path, configuracion):
     assert codo.con_dato[50:52].all()
     assert codo.motivos["interpolado"][50:52].all()
     assert not codo.motivos["interpolado"][:50].any()
+
+
+def test_un_angulo_fuera_del_rango_anatomico_queda_marcado(tmp_path, configuracion):
+    corrida = _corrida_filtrada(tmp_path, configuracion)
+    # El codo barre de 90° a 180°: con el piso en 120° tiene que marcar la parte
+    # cerrada del recorrido y dejar intacta la abierta.
+    otra = _con_rango_de_codo(configuracion, minimo=120.0)
+    resultado = calcular_angulos_de_corrida(corrida, tmp_path / "angulos", otra)
+
+    codo = resultado.series["codo_izq"]
+    fuera = codo.motivos["fuera_de_rango_en_el_plano_medido"]
+    assert fuera.any() and not fuera.all()
+    np.testing.assert_array_equal(fuera, codo.con_dato & (codo.grados < 120.0))
+    # El valor sigue estando: marcar no es descartar.
+    assert not np.isnan(codo.grados[fuera]).any()
+    # Y la rodilla, que está extendida en 180°, no se contagia.
+    assert not resultado.series["rodilla_izq"].motivos["fuera_de_rango_en_el_plano_medido"].any()
+
+
+def test_el_rango_se_busca_por_tipo_de_articulacion_y_su_falta_es_un_error(tmp_path, configuracion):
+    corrida = _corrida_filtrada(tmp_path, configuracion)
+    rangos = dict(configuracion.calidad.rango_anatomico_grados)
+    del rangos["codo"]
+    otra = configuracion.model_copy(
+        update={
+            "calidad": configuracion.calidad.model_copy(update={"rango_anatomico_grados": rangos})
+        }
+    )
+    # Sin rango para el tipo no se inventa uno permisivo: apagaría el criterio
+    # en silencio.
+    with pytest.raises(ErrorDeConfiguracion, match="falta el rango anatómico de 'codo'"):
+        calcular_angulos_de_corrida(corrida, tmp_path / "angulos", otra)
+
+
+def test_un_salto_imposible_entre_fotogramas_queda_marcado(tmp_path, configuracion):
+    corrida = _corrida_filtrada(tmp_path, configuracion)
+    # Umbral bajísimo: el movimiento normal del brazo ya lo supera en la parte
+    # rápida del recorrido, así que tiene que marcar algo pero no todo.
+    otra = _con_velocidad_maxima(configuracion, 2.0)
+    resultado = calcular_angulos_de_corrida(corrida, tmp_path / "angulos", otra)
+    codo = resultado.series["codo_izq"]
+    rapido = codo.motivos["velocidad_angular"]
+    assert rapido.any() and not rapido.all()
+
+    # Con un umbral que nada alcanza, el motivo no marca nada.
+    otra = _con_velocidad_maxima(configuracion, 180.0)
+    resultado = calcular_angulos_de_corrida(corrida, tmp_path / "angulos", otra)
+    assert not resultado.series["codo_izq"].motivos["velocidad_angular"].any()
+
+
+def test_la_velocidad_no_marca_a_traves_de_un_hueco(tmp_path, configuracion):
+    detectado = np.ones(120, bool)
+    detectado[40:60] = False
+    corrida = _corrida_filtrada(tmp_path, configuracion, detectado=detectado)
+    otra = _con_velocidad_maxima(configuracion, 2.0)
+    resultado = calcular_angulos_de_corrida(corrida, tmp_path / "angulos", otra)
+
+    codo = resultado.series["codo_izq"]
+    # El primer fotograma después del hueco no tiene con qué compararse hacia
+    # atrás; el salto que lo cruzaría no es velocidad.
+    assert not codo.motivos["velocidad_angular"][40:60].any()
+    assert np.isnan(velocidad_angular(codo.grados)[60])
 
 
 def test_las_series_sobreviven_la_ida_y_vuelta_al_parquet(tmp_path, configuracion):

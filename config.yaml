@@ -58,6 +58,51 @@ calidad:
   # cuantificar cuán poco confiable es el lado lejano.
   umbral_visibility_reporte: 0.3
 
+  # Rango de valores que cada articulación puede tomar, en grados de ángulo
+  # incluido (180 = extendido). Es una restricción del cuerpo, no un parámetro
+  # ajustable: sale del rango de movimiento articular de referencia en
+  # goniometría (AAOS; Norkin & White, "Measurement of Joint Motion: A Guide to
+  # Goniometry"), convertido con `incluido = 180 - flexión`.
+  #
+  # - codo: flexión 0 a 150 grados -> piso en 30.
+  # - rodilla: flexión 0 a 135 activa, hasta 150 pasiva; se toma la pasiva, que
+  #   es el extremo permisivo -> piso en 30.
+  # - hombro (ángulo entre brazo y tronco): flexión 0 a 180 y extensión 0 a 60;
+  #   como ángulo incluido no se distingue adelante de atrás, todo el rango es
+  #   alcanzable y la restricción queda inerte a propósito. Se declara igual
+  #   para que se vea que no se olvidó.
+  #
+  # Se toma en cada caso el extremo MÁS permisivo del rango de referencia: el
+  # criterio tiene que marcar lo imposible, no lo inusual. El máximo de 180 es
+  # inerte por construcción, porque un ángulo incluido no puede pasarlo.
+  #
+  # La clave es el tipo de articulación, no el lado: el rango de movimiento del
+  # codo derecho es el mismo que el del izquierdo.
+  rango_anatomico_grados:
+    codo:
+      minimo: 30.0
+      maximo: 180.0
+    hombro:
+      minimo: 0.0
+      maximo: 180.0
+    rodilla:
+      minimo: 30.0
+      maximo: 180.0
+
+  # Salto máximo creíble del ángulo entre dos fotogramas consecutivos, en grados
+  # por fotograma. Por encima de esto la medición queda marcada.
+  #
+  # 30 grados por fotograma (900 grados/s a 30 fps). Con la brazada a 0.47 Hz y
+  # una excursión de codo de unos 90 grados, una oscilación sinusoidal da un
+  # pico de 133 grados/s, o sea 4.4 grados por fotograma: el umbral está unas
+  # 7 veces por encima, margen que cubre que el agarre es más rápido que el
+  # promedio del ciclo y que la señal no es una sinusoide. Marca lo grosero.
+  #
+  # Uno solo para las tres articulaciones: la rodilla no necesita uno propio
+  # (su p99 es 12 grados por fotograma) y multiplicar parámetros sin evidencia
+  # de que hagan falta agrega decisiones que después hay que justificar.
+  velocidad_angular_maxima_grados_por_fotograma: 30.0
+
 filtrado:
   # Filtro paso bajo aplicado a las trayectorias, en píxeles, tramo continuo por
   # tramo continuo. Sin gate por visibility: se filtra todo lo detectado.

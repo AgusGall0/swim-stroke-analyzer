@@ -19,6 +19,8 @@ DECISIONES_ABIERTAS = [
 #: Valores ya decididos: `exigir` tiene que devolverlos sin protestar.
 DECISIONES_TOMADAS = [
     "calidad.umbral_visibility_reporte",
+    "calidad.rango_anatomico_grados",
+    "calidad.velocidad_angular_maxima_grados_por_fotograma",
     "filtrado.tipo",
     "filtrado.orden",
     "filtrado.frecuencia_corte_hz",
@@ -39,12 +41,19 @@ def _escribir(datos: dict, carpeta: Path) -> Path:
     return archivo
 
 
+#: Parámetros cuyas claves internas son datos y no esquema: son un mapeo de
+#: valores (por ejemplo, un rango por tipo de articulación), así que que falte
+#: una clave no es un parámetro faltante. Que estén todas las que hacen falta lo
+#: verifica la etapa que las usa, con un mensaje que nombra la que falta.
+MAPEOS_DE_VALORES = ["calidad.rango_anatomico_grados"]
+
+
 def _todos_los_parametros(datos: dict, prefijo: str = "") -> list[str]:
     parametros = []
     for clave, valor in datos.items():
         ruta = f"{prefijo}{clave}"
         parametros.append(ruta)
-        if isinstance(valor, dict):
+        if isinstance(valor, dict) and ruta not in MAPEOS_DE_VALORES:
             parametros.extend(_todos_los_parametros(valor, f"{ruta}."))
     return parametros
 
