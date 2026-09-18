@@ -149,8 +149,8 @@ justificación; el informe que los respalda se regenera con
   entre 2.0 y 4.25 Hz); el piso de ruido de la PSD arranca en ~4 Hz, así que los
   6 Hz habituales en biomecánica dejarían pasar ruido.
 - **`filtrado.hueco_maximo_interpolable_fotogramas: 3`** (0.1 s). Con la brazada
-  a 0.47 Hz, interpolar 0.5 s equivale a inventar un cuarto de ciclo; los huecos
-  más largos quedan en NaN y cortan el tramo.
+  a 0.55 Hz, interpolar 0.5 s equivale a inventar más de un cuarto de ciclo; los
+  huecos más largos quedan en NaN y cortan el tramo.
 - **`lateralidad.metodo_correccion_intercambios: ninguno`.** Los intercambios se
   detectan y se marcan con una bandera en el Parquet filtrado, y se informa la
   tasa por par, pero no se corrigen: tocar el dato antes de ver si el artefacto
@@ -191,8 +191,8 @@ Los dos criterios que se agregaron por esto, con sus valores en `config.yaml`:
   distingue cuál. Lo único que se afirma es que esa medición no representa a la
   articulación.
 - **`calidad.velocidad_angular_maxima_grados_por_fotograma: 30`** (900 °/s a 30
-  fps), uno solo para las tres. Es unas 7 veces el pico que implica la brazada
-  (4,8 °/fotograma para una sinusoide a 0,47 Hz con la excursión de codo
+  fps), uno solo para las tres. Es unas 5 veces el pico que implica la brazada
+  (5,6 °/fotograma para una sinusoide a 0,55 Hz con la excursión de codo
   medida), margen que cubre que el agarre es más rápido que el promedio y que la
   señal no es una sinusoide. Marca lo grosero: la mediana del codo ya está por
   encima de ese pico teórico, así que **no estar marcado no es estar limpio**.
@@ -202,6 +202,49 @@ Los dos criterios que se agregaron por esto, con sus valores en `config.yaml`:
 muñeca del lado lejano tiene 15 a 48 px RMS de ruido sobre un nadador de ~500 px.
 La rebanada vertical se hace sobre el lado cercano a la cámara (el izquierdo) y
 la limitación se reporta, no se esconde.
+
+**El ciclo se corta en la mano más alta del recobro, no en el ángulo de codo.**
+Fijado con el barrido del 2026-09-18; el informe que lo respalda se regenera con
+`scripts/informe_ciclos.py`.
+
+- **`segmentacion.senal: muneca_y_rel_hombro`**, que es la **altura** de la
+  muñeca izquierda **sobre** el hombro izquierdo: `y_hombro − y_muñeca`, positiva
+  con la mano arriba. El orden de la resta importa porque en coordenadas de
+  imagen la `y` crece hacia abajo; al revés el máximo sería la mano más profunda
+  del tirón, que es otro evento y da otros ciclos. Relativa al hombro porque el
+  nadador se desplaza dentro del encuadre.
+- Las tres señales posicionales que se midieron (muñeca en x, muñeca en y, codo
+  en y, todas relativas al hombro) **empatan dentro del ruido**: 19,1 a 19,8° de
+  desvío entre ciclos. El desempate no puede ser el decimal, así que gana la que
+  corresponde a un **evento nombrado** de la brazada —la mano en lo más alto del
+  recobro, antes de la entrada—, que es el punto de referencia habitual en la
+  literatura: la fase 0 queda definida en términos biomecánicos y no como el
+  máximo de una señal auxiliar.
+- **El ángulo de codo está descartado con evidencia**: da ciclos de 1,40 a
+  3,07 s porque la serie vive saturada entre 165° y 180° y el detector engancha
+  la meseta.
+- **`segmentacion.distancia_minima_entre_picos_s: 1.4`.** Entre 1,2 y 1,6 s el
+  resultado es idéntico —mismos picos, mismas posiciones—, así que es una meseta
+  y 1,4 es el centro. Por debajo de 1,0 s aparece el máximo secundario de cada
+  ciclo y la cuenta se duplica.
+- **Sin parámetro de prominencia**: en el barrido de 0 a 20 px no cambió ningún
+  pico, y un parámetro inerte igual hay que justificarlo después.
+- **Un ciclo no cruza un hueco.** Los cortes se buscan tramo continuo por tramo
+  continuo: un intervalo que abarque un hueco no es un ciclo, es dos trozos con
+  un tiempo indeterminado en el medio.
+
+**La frecuencia de brazada del material es 0,55 Hz**, no los 0,47 Hz que decía
+antes. Los 0,47 venían del pico de la PSD del informe de caracterización, que
+con ventanas de 8 s tiene una resolución de 0,234 Hz: 0,47 era el bin 2 y no
+distinguía 0,47 de 0,55. Los 0,55 salen de medir la duración de los ciclos ya
+segmentados (mediana 1,83 s sobre 7 ciclos).
+
+**Los ciclos con mediciones marcadas no se descartan.** Con 7 ciclos, descartar
+los que tienen alguna medición marcada deja la muestra en nada y esconde el
+problema: la figura saldría limpia porque se le sacó lo sucio, no porque el dato
+lo sea. En vez de descartar, la curva media lleva un panel de **cobertura** que
+dice, en cada punto del ciclo, qué fracción de las mediciones promediadas está
+marcada.
 
 **El recorte no va a `config.yaml`.** `video.recorte` queda en `null`: un
 recorte es propiedad del archivo que se procesa, no del método. Para el video de
@@ -214,17 +257,15 @@ Estas las define Agustín con evidencia, no por defecto. **No las fijes por tu
 cuenta**: cuando el código las necesite, proponé opciones con sus trade-offs y
 frená.
 
-En `config.yaml` están en `null` a propósito: un número provisorio termina en
+En `config.yaml` irían en `null` a propósito: un número provisorio termina en
 una figura y nadie recuerda que era provisorio. El código que las use las pide
 con `Configuracion.exigir(...)`, que falla mientras sigan en `null`.
 
-- **Criterio de segmentación de ciclos.** Detección de picos sobre qué señal, con
-  qué distancia mínima entre picos, y cómo se valida que los ciclos detectados
-  sean reales.
-Ya resueltas, con su justificación en "Decisiones de diseño ya tomadas": umbral
-de `visibility`, filtro y frecuencia de corte, criterio de hueco corto, manejo
-de intercambios izquierda/derecha, rango anatómico de cada articulación y umbral
-de velocidad angular.
+Ahora mismo no queda ninguna abierta. Ya resueltas, con su justificación en
+"Decisiones de diseño ya tomadas": umbral de `visibility`, filtro y frecuencia
+de corte, criterio de hueco corto, manejo de intercambios izquierda/derecha,
+rango anatómico de cada articulación, umbral de velocidad angular y criterio de
+segmentación de ciclos.
 
 ## Convenciones
 
@@ -295,8 +336,13 @@ de landmarks generados. Todo eso es derivado o de terceros.
 pinneadas, CLI, `config.yaml`, script de descarga del modelo, tests, CI, LICENSE.
 README honesto que describa lo que el proyecto hace hoy.
 
-**Rebanada vertical.** El camino completo descrito arriba en "Alcance", hasta la
-figura de curva media normalizada.
+**Rebanada vertical: terminada.** El camino completo descrito arriba en
+"Alcance" llega hasta la figura de curva media normalizada
+(`salidas/final/ciclos/curva_media_codo.png`, 7 ciclos, desvío medio 22,3°).
+
+Lo que sigue: **validación contra anotación manual.** Es lo único que separa la
+variabilidad del nadador del error del método, y sin eso ningún número que salga
+de acá es una medición.
 
 Después de eso se decide el alcance real con evidencia: qué tan bien funciona
 MediaPipe en estas condiciones determina si el proyecto apunta a vista lateral

@@ -5,10 +5,11 @@
 Análisis biomecánico de la brazada de crol a partir de video, con visión
 computacional.
 
-> **Estado: media rebanada vertical.** Del video salen landmarks persistidos en
-> Parquet, un informe que caracteriza la señal, y trayectorias interpoladas y
-> filtradas. Los ángulos articulares, la segmentación de ciclos y la figura
-> final todavía no están implementados.
+> **Estado: rebanada vertical completa.** Del video salen landmarks persistidos
+> en Parquet, trayectorias interpoladas y filtradas, ángulos articulares del
+> lado cercano, ciclos de brazada segmentados y la figura de curva media
+> normalizada al 100 % del ciclo. Nada de eso está validado contra anotación
+> manual todavía, que es lo que sigue.
 
 ## Qué es y cuál es el objetivo
 
@@ -22,7 +23,7 @@ proyecto está en lo que viene después: persistir los datos, procesar la señal
 calcular métricas con criterio biomecánico y validarlas contra anotación
 manual.
 
-El primer entregable previsto es un camino completo y angosto:
+El primer entregable es un camino completo y angosto:
 
 ```
 video → landmarks a Parquet → filtrado → ángulos articulares
@@ -30,7 +31,7 @@ video → landmarks a Parquet → filtrado → ángulos articulares
 ```
 
 que termina en la figura de la curva media ± desvío estándar del ángulo de codo
-a lo largo del ciclo de brazada. Los ángulos se calculan sobre el lado cercano
+a lo largo del ciclo de brazada, y que ya corre de punta a punta. Los ángulos se calculan sobre el lado cercano
 a la cámara; el porqué está en
 [Qué se midió sobre el video de desarrollo](#qué-se-midió-sobre-el-video-de-desarrollo).
 
@@ -62,16 +63,24 @@ Tecnología y Ciencias Aplicadas, U.N.Ca.), en etapa piloto.
 - **`scripts/informe_angulos.py`**: informe reproducible de los ángulos —
   cobertura, porcentaje marcado desglosado por motivo, rango de valores de cada
   articulación y la serie temporal del ángulo de codo.
+- **`swimalyzer ciclos`**: corta la serie en ciclos de brazada. El corte es la
+  mano en lo más alto del recobro, medida como el máximo de la altura de la
+  muñeca sobre el hombro; un ciclo nunca cruza un hueco. Cada ciclo se normaliza
+  al 0-100 % de su duración y se persiste en Parquet, con la bandera de cada
+  medición. Los ciclos con mediciones marcadas **no se descartan**: lo que se
+  informa es qué fracción está marcada en cada fase.
+- **`scripts/informe_ciclos.py`**: informe reproducible de los ciclos — dónde
+  cayó cada corte, cuánto dura cada ciclo, y la figura de curva media ± 1 desvío
+  estándar del ángulo de codo con su panel de cobertura.
 - **`config.yaml` con validación.** Si falta un parámetro, sobra uno desconocido
   o un valor está fuera de rango, la carga falla nombrando el parámetro.
 - **Descarga del modelo** MediaPipe Pose Landmarker (heavy) con verificación de
   SHA-256.
 - **Tests y CI** (lint con ruff y pytest en Python 3.11).
 
-No hay segmentación de ciclos ni figura de curva media del ciclo de brazada: el
-criterio de segmentación es una decisión abierta. No hay análisis en tiempo real
-ni soporte para otros estilos. Ningún resultado está validado contra anotación
-manual.
+No hay análisis en tiempo real ni soporte para otros estilos. **Ningún resultado
+está validado contra anotación manual**, así que ningún número que salga de acá
+es todavía una medición con error conocido.
 
 ## Instalación
 
@@ -128,6 +137,12 @@ swimalyzer angulos <directorio> [--out <otro directorio>]
 
 # 5. ángulos → informe de ángulos (figuras + números)
 python scripts/informe_angulos.py <directorio>
+
+# 6. ángulos → ciclos de brazada segmentados y normalizados
+swimalyzer ciclos <directorio> [--out <otro directorio>]
+
+# 7. ciclos → informe de ciclos y figura de curva media
+python scripts/informe_ciclos.py <directorio>
 ```
 
 `--recorte` recibe la región del video original a procesar, en píxeles, y
@@ -186,13 +201,14 @@ Decisiones ya tomadas, con el informe de caracterización a la vista:
 | `calidad.umbral_visibility_reporte` | `0.3` | Criterio de reporte, no de descarte. Un umbral global no elige qué fotogramas son malos: elige qué miembros existen. |
 | `filtrado.tipo` / `orden` | `butterworth` / `2` | Con `filtfilt`, sin desfase. El estándar en biomecánica. |
 | `filtrado.frecuencia_corte_hz` | `3.4` | Mediana del análisis de residuos de Winter sobre este material (2.0 a 4.25 Hz según el landmark). |
-| `filtrado.hueco_maximo_interpolable_fotogramas` | `3` | 0.1 s. Con la brazada a 0.47 Hz, interpolar medio segundo es inventar un cuarto de ciclo. |
+| `filtrado.hueco_maximo_interpolable_fotogramas` | `3` | 0.1 s. Con la brazada a 0.55 Hz, interpolar medio segundo es inventar más de un cuarto de ciclo. |
 | `lateralidad.metodo_correccion_intercambios` | `ninguno` | Se detectan y se marcan; corregirlos antes de ver si el artefacto llega a los ángulos sería tocar el dato sin evidencia. |
+| `segmentacion.senal` | `muneca_y_rel_hombro` | La altura de la muñeca sobre el hombro. Su máximo es un evento nombrado de la brazada —la mano en lo más alto del recobro—, así que la fase 0 queda definida en términos biomecánicos. |
+| `segmentacion.distancia_minima_entre_picos_s` | `1.4` | Entre 1.2 y 1.6 s el resultado es idéntico: es una meseta y 1.4 es el centro. |
 
-Siguen abiertas, en `null` a propósito y sin valor provisorio: el criterio de
-segmentación de ciclos (`segmentacion.senal` y
-`segmentacion.distancia_minima_entre_picos_s`). El código que las use las pide
-con `Configuracion.exigir(...)`, que falla mientras sigan en `null`.
+No queda ninguna decisión abierta en `null`. Las que se agreguen van en `null` a
+propósito y sin valor provisorio: el código que las use las pide con
+`Configuracion.exigir(...)`, que falla mientras sigan sin definir.
 
 ### Tests
 
@@ -210,11 +226,11 @@ src/swimalyzer/
   io/          lectura de video, escritura de Parquet, metadata de corrida
   pose/        índices de landmarks, wrapper de MediaPipe, etapa de extracción
   signal/      caracterización de la señal, interpolación y filtrado
-  metrics/     ángulos articulares; faltan ciclos y métricas derivadas
+  metrics/     ángulos articulares y segmentación en ciclos de brazada
   viz/         paleta común y figuras de los informes
 tests/
 config.yaml
-scripts/       descarga del modelo, informes de caracterización y de ángulos
+scripts/       descarga del modelo e informes de cada etapa
 experiments/   scripts originales, conservados como registro del proceso
 ```
 
@@ -245,12 +261,14 @@ era cada uno.
 - [x] Detección y marcado de intercambios izquierda/derecha
 - [x] Ángulos articulares en coordenadas de píxel, con las banderas de calidad
       heredadas de sus landmarks
-- [ ] Segmentación de ciclos de brazada
-- [ ] Figura de curva media ± desvío estándar del ángulo de codo
+- [x] Criterios de calidad que miran la magnitud derivada: rango anatómico y
+      velocidad angular
+- [x] Segmentación de ciclos de brazada
+- [x] Figura de curva media ± desvío estándar del ángulo de codo, con cobertura
 
-**Después:** con esa rebanada funcionando se decide el alcance real según qué
-tan bien funcione MediaPipe en estas condiciones, y se valida contra anotación
-manual.
+**Lo que sigue: validación contra anotación manual.** Es lo único que separa la
+variabilidad del nadador del error del método. Después de eso se decide el
+alcance real según qué tan bien funcione MediaPipe en estas condiciones.
 
 ## Qué se midió sobre el video de desarrollo
 
@@ -283,7 +301,8 @@ fotogramas con detección, y su trayectoria es estable: el tronco sirve como
 referencia.
 
 Otros dos datos de la misma corrida: la frecuencia de brazada aparece como un
-pico claro en **0,47 Hz**, y el tramo continuo con detección más largo dura
+pico de la PSD en **0,47 Hz** —un número que después la segmentación corrigió a
+0,55 Hz, ver más abajo—, y el tramo continuo con detección más largo dura
 **8,0 s** (241 fotogramas), con 15,0 s utilizables sumando los tres tramos más
 largos.
 
@@ -342,10 +361,82 @@ De ahí salen dos consecuencias para el proyecto:
 
 **Marcar lo grosero no deja limpio lo demás.** La mediana de velocidad angular
 del codo es de 6,1° por fotograma y el pico que implica la brazada —una
-sinusoide a 0,47 Hz con la excursión medida de 97°— es de 4,8°. O sea que la
+sinusoide a 0,55 Hz con la excursión medida de 97°— es de 5,6°. O sea que la
 mitad de la serie se mueve más rápido de lo que el movimiento explica. El umbral
 de 30° por fotograma marca el 14 % de los ángulos de codo; que el 86 % restante
 no esté marcado no quiere decir que esté bien medido.
+
+### Ciclos de brazada y curva media
+
+De la misma corrida, en `ciclos/informe.md`. El corte es la mano en lo más alto
+del recobro, medida como el máximo de la altura de la muñeca sobre el hombro
+(`y_hombro − y_muñeca`: en coordenadas de imagen la `y` crece hacia abajo, así
+que el orden de la resta decide qué evento es el máximo).
+
+**7 ciclos completos**, de tres tramos continuos distintos. Duran de 1,67 a
+2,27 s, con una mediana de 1,83 s: **la frecuencia de brazada es 0,55 Hz**. Ese
+número corrige los 0,47 Hz del informe de caracterización, que salían de un pico
+de PSD con ventanas de 8 s y por lo tanto con una resolución de 0,234 Hz: 0,47
+era el bin 2 y no distinguía 0,47 de 0,55.
+
+El ángulo de codo **no sirve para segmentar**: da ciclos de 1,40 a 3,07 s porque
+la serie vive saturada entre 165° y 180° y el detector de picos engancha la
+meseta en vez de un evento. Las tres señales posicionales que se probaron
+—muñeca en x, muñeca en y, codo en y, todas relativas al hombro— empatan dentro
+del ruido, así que el desempate fue biomecánico y no numérico.
+
+| articulación | ciclos | desvío medio | desvío máx | marcado medio |
+|---|---|---|---|---|
+| codo izq | 7 | 22,3° | 63,9° | 23,9 % |
+| hombro izq | 7 | 36,4° | 82,8° | 24,6 % |
+| rodilla izq | 7 | 6,5° | 13,0° | 26,3 % |
+
+**Ningún ciclo se descartó por tener mediciones marcadas.** Con 7 ciclos,
+descartar los que tienen alguna medición marcada deja la muestra en nada y
+esconde el problema: la figura saldría limpia porque se le sacó lo sucio, no
+porque el dato lo sea. En su lugar, la figura lleva un panel de cobertura que
+dice en cada fase del ciclo qué fracción de las mediciones promediadas está
+marcada.
+
+**Qué tan lejos está esto de una medición.** ±22° sobre una curva media que
+recorre 64° es una banda ancha, y con 7 ciclos el desvío describe estos ciclos,
+no la brazada del nadador.
+
+#### El corte no es tan repetible como debería
+
+Es el límite conocido más importante de la segmentación, y conviene tenerlo a la
+vista antes de leer cualquier curva media que salga de acá.
+
+Si el corte cayera siempre en el mismo punto del movimiento, el codo tendría que
+estar más o menos igual en todos los cortes. No lo está:
+
+| fotograma del corte | 64 | 118 | 174 | 229 | 281 | 334 | 389 | 439 | 492 | 560 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ángulo de codo | 167° | 161° | 171° | 108° | 119° | 172° | 109° | 117° | 178° | 86° |
+
+Van de **86° a 178°**, con una mediana de 140° y un desvío de 34°. Es mucho para
+un instante que se supone el mismo, y es lo que explica el escalón de la curva
+media entre el 0 % y el 100 %: son el mismo evento, pero promediado sobre
+conjuntos de cortes distintos, porque el primer corte de cada tramo no es el
+100 % de nadie y el último no es el 0 % de nadie.
+
+La dispersión puede venir de tres lados:
+
+1. **El detector no corta siempre en el mismo punto del movimiento.** El corte
+   sale de un máximo de la señal de altura, y nada garantiza que ese máximo caiga
+   siempre en la misma fase del recobro.
+2. **El ángulo de codo está ruidoso ahí.** No porque la muñeca esté peor
+   estimada que de costumbre —en los cortes su `visibility` mediana es 0,60,
+   algo mejor que el 0,53 de toda la corrida—, sino porque, como se explica más
+   arriba, **la `visibility` no predice si el ángulo derivado es válido**: la
+   correlación es 0,055. Que el punto esté bien puntuado no dice nada del ángulo.
+3. **El nadador realmente llega al recobro con el codo distinto cada vez.** Sería
+   variabilidad real de la técnica, no error de medición.
+
+**Con este material las tres no se distinguen**, y esa es precisamente la razón
+por la que hace falta validación contra anotación manual: es lo único que separa
+la variabilidad del nadador del error del método. Hasta que exista, la curva
+media describe siete ciclos de un video de desarrollo y nada más.
 
 ## Limitaciones conocidas del enfoque
 
