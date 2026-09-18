@@ -92,11 +92,19 @@ calidad:
   # Salto máximo creíble del ángulo entre dos fotogramas consecutivos, en grados
   # por fotograma. Por encima de esto la medición queda marcada.
   #
-  # 30 grados por fotograma (900 grados/s a 30 fps). Con la brazada a 0.47 Hz y
-  # una excursión de codo de unos 90 grados, una oscilación sinusoidal da un
-  # pico de 133 grados/s, o sea 4.4 grados por fotograma: el umbral está unas
-  # 7 veces por encima, margen que cubre que el agarre es más rápido que el
-  # promedio del ciclo y que la señal no es una sinusoide. Marca lo grosero.
+  # 30 grados por fotograma (900 grados/s a 30 fps). Con la brazada a 0.55 Hz y
+  # la excursión de codo medida, una oscilación sinusoidal da un pico de
+  # 5.6 grados por fotograma: el umbral está unas 5 veces por encima, margen que
+  # cubre que el agarre es más rápido que el promedio del ciclo y que la señal
+  # no es una sinusoide. Marca lo grosero.
+  #
+  # Los 0.55 Hz salen de medir la duración de los ciclos ya segmentados
+  # (mediana 1.83 s sobre 7 ciclos). El valor que figuraba antes acá, 0.47 Hz,
+  # venía del pico de la PSD del informe de caracterización, que con ventanas
+  # de 8 s tiene una resolución de 0.234 Hz: 0.47 era el bin 2, o sea el número
+  # no distinguía 0.47 de 0.55. Cambiar la frecuencia no cambia el umbral —30
+  # sigue estando muy por encima del pico teórico—, pero el número tiene que
+  # ser correcto.
   #
   # Uno solo para las tres articulaciones: la rodilla no necesita uno propio
   # (su p99 es 12 grados por fotograma) y multiplicar parámetros sin evidencia
@@ -119,18 +127,51 @@ filtrado:
   # Hueco máximo, en fotogramas, que se interpola linealmente. Los más largos
   # quedan en NaN y cortan el tramo.
   #
-  # 3 fotogramas (0.1 s): con la brazada a 0.47 Hz, interpolar 0.5 s equivale a
-  # inventar un cuarto de ciclo.
+  # 3 fotogramas (0.1 s): con la brazada a 0.55 Hz, interpolar 0.5 s equivale a
+  # inventar más de un cuarto de ciclo.
   hueco_maximo_interpolable_fotogramas: 3
 
 segmentacion:
-  # DECISIÓN ABIERTA — SIN JUSTIFICAR TODAVÍA.
   # Criterio para dividir la serie en ciclos de brazada por detección de picos.
+  # Fijado con el barrido sobre el video de desarrollo (2026-09-18); el informe
+  # que lo respalda se regenera con `scripts/informe_ciclos.py`.
   #
-  # Señal sobre la que se buscan los picos.
-  senal: null
+  # Señal sobre la que se buscan los máximos. `muneca_y_rel_hombro` es la ALTURA
+  # de la muñeca izquierda SOBRE el hombro izquierdo, en píxeles: `y_hombro -
+  # y_muñeca`, positiva con la mano arriba. El orden de la resta importa, porque
+  # en coordenadas de imagen la `y` crece hacia abajo; al revés el máximo sería
+  # la mano más profunda del tirón, que es otro evento y da otros ciclos.
+  #
+  # Relativa al hombro y no absoluta porque el nadador se desplaza dentro del
+  # encuadre, y una coordenada absoluta mezclaría ese desplazamiento con el
+  # movimiento del brazo.
+  #
+  # Por qué la muñeca y no otra: las tres señales posicionales que se midieron
+  # (muñeca en x, muñeca en y, codo en y, todas relativas al hombro) empatan
+  # dentro del ruido —19.1 a 19.8 grados de desvío entre ciclos de la curva de
+  # codo—, así que el desempate no puede ser el decimal. Gana la muñeca porque
+  # su máximo corresponde a un evento nombrado de la brazada (la mano en lo más
+  # alto del recobro, antes de la entrada al agua), que es el punto de
+  # referencia habitual en la literatura: así la fase 0 queda definida en
+  # términos biomecánicos y no como el máximo de una señal auxiliar.
+  #
+  # El ángulo de codo queda descartado con evidencia: da ciclos de 1.40 a
+  # 3.07 s, porque la serie vive saturada entre 165 y 180 grados y el detector
+  # engancha la meseta en vez de un evento.
+  senal: muneca_y_rel_hombro
+
   # Distancia mínima entre picos consecutivos, en segundos (> 0).
-  distancia_minima_entre_picos_s: null
+  #
+  # 1.4 s: entre 1.2 y 1.6 s el resultado es idéntico —misma cantidad de picos,
+  # en las mismas posiciones—, así que es una meseta y no un valor delicado;
+  # 1.4 es el centro. Equivale a rechazar ciclos más rápidos que 0.71 Hz cuando
+  # la brazada medida va a 0.55 Hz. Por debajo de 1.0 s aparece el máximo
+  # secundario de cada ciclo y la cuenta se duplica.
+  distancia_minima_entre_picos_s: 1.4
+
+  # No hay parámetro de prominencia mínima a propósito: en el barrido de 0 a
+  # 20 px no cambió ningún pico. Un parámetro que no cambia nada igual hay que
+  # justificarlo después, así que no se agrega.
 
 lateralidad:
   # Qué se hace con los intercambios izquierda/derecha de MediaPipe cuando el

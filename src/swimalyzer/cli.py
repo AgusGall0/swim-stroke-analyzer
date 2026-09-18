@@ -15,7 +15,17 @@ from pydantic import ValidationError
 from swimalyzer import __version__
 from swimalyzer.config import Configuracion, ErrorDeConfiguracion, Recorte, cargar_configuracion
 from swimalyzer.io.video import ErrorDeVideo
-from swimalyzer.metrics.angulos import MOTIVOS, ResultadoAngulos, calcular_angulos_de_corrida
+from swimalyzer.metrics.angulos import (
+    MOTIVOS,
+    NOMBRE_ANGULOS,
+    ResultadoAngulos,
+    calcular_angulos_de_corrida,
+)
+from swimalyzer.metrics.ciclos import (
+    ErrorDeSegmentacion,
+    ResultadoCiclos,
+    segmentar_corrida,
+)
 from swimalyzer.pose.extraccion import NOMBRE_LANDMARKS, ResultadoExtraccion, extraer
 from swimalyzer.signal.filtrado import (
     NOMBRE_FILTRADO,
@@ -131,6 +141,35 @@ def _construir_parser() -> argparse.ArgumentParser:
         help="archivo de configuración (por defecto: %(default)s)",
     )
     angulos_parser.set_defaults(funcion=_comando_angulos)
+
+    ciclos_parser = subcomandos.add_parser(
+        "ciclos",
+        # El signo de porcentaje va duplicado: argparse interpola la cadena.
+        help="segmenta la serie en ciclos de brazada y normaliza cada uno al 0-100 %%",
+        description=(
+            "Lee los ángulos de una corrida y corta la serie en ciclos de brazada. El corte "
+            "es la mano en lo más alto del recobro, medida como el máximo de la altura de la "
+            "muñeca sobre el hombro. Un ciclo no cruza un hueco: los cortes se buscan tramo "
+            "continuo por tramo continuo. Los ciclos con mediciones marcadas se incluyen; lo "
+            "que se informa es qué fracción está marcada en cada fase del ciclo."
+        ),
+    )
+    ciclos_parser.add_argument(
+        "corrida", type=Path, help="directorio de una corrida con ángulos ya calculados"
+    )
+    ciclos_parser.add_argument(
+        "--out",
+        type=Path,
+        metavar="DIR",
+        help="dónde escribir el resultado (por defecto, la misma corrida)",
+    )
+    ciclos_parser.add_argument(
+        "--config",
+        type=Path,
+        default=RUTA_CONFIG_POR_DEFECTO,
+        help="archivo de configuración (por defecto: %(default)s)",
+    )
+    ciclos_parser.set_defaults(funcion=_comando_ciclos)
     return parser
 
 
@@ -336,6 +375,71 @@ def _comando_angulos(args: argparse.Namespace) -> int:
         return SALIDA_ERROR_DE_EJECUCION
 
     _resumir_angulos(resultado)
+    return SALIDA_OK
+
+
+def _resumir_ciclos(resultado: ResultadoCiclos) -> None:
+    tamano_kb = resultado.ruta_ciclos.stat().st_size / 1024
+    print(
+        f"Señal de corte: {resultado.senal.nombre} · evento: {resultado.senal.evento}\n"
+        f"Distancia mínima entre cortes: {resultado.distancia_minima_s:g} s · "
+        "sin prominencia mínima"
+    )
+
+    if not resultado.ciclos:
+        print("\nNo se detectó ningún ciclo completo.")
+    else:
+        duraciones = resultado.duraciones_s
+        print(
+            f"\nCiclos: {len(resultado.ciclos)} · duración "
+            f"{duraciones.min():.2f} a {duraciones.max():.2f} s "
+            f"(mediana {resultado.duracion_mediana_s:.2f} s) · "
+            f"frecuencia de brazada {resultado.frecuencia_de_brazada_hz:.2f} Hz"
+        )
+        for ciclo in resultado.ciclos:
+            print(
+                f"  ciclo {ciclo.numero:>2}  tramo {ciclo.tramo}  "
+                f"fotogramas {ciclo.inicio:>4} a {ciclo.fin:>4}  "
+                f"{ciclo.duracion_s(resultado.fps):.2f} s"
+            )
+
+    for nombre, curva in resultado.curvas.items():
+        if not curva.n:
+            print(f"\n{nombre}: ningún ciclo con la serie completa")
+            continue
+        desvio = f"{float(curva.desvio.mean()):.1f}°" if curva.n > 1 else "sin desvío (1 ciclo)"
+        print(
+            f"\n{nombre}: {curva.n} ciclos promediados · desvío medio {desvio} · "
+            f"marcado medio {curva.cobertura_marcada.mean():.1%} de las mediciones"
+        )
+
+    print("\nNingún ciclo se descartó por tener mediciones marcadas: la cobertura se informa.")
+    print(f"Ciclos:   {resultado.ruta_ciclos} ({tamano_kb:.1f} KiB)")
+    print(f"Metadata: {resultado.ruta_metadata}")
+
+
+def _comando_ciclos(args: argparse.Namespace) -> int:
+    if not (args.corrida / NOMBRE_ANGULOS).is_file():
+        return _error(
+            "ciclos",
+            f"no hay ángulos calculados en {args.corrida} (falta {NOMBRE_ANGULOS}); "
+            "corré primero swimalyzer angulos",
+        )
+
+    try:
+        configuracion = cargar_configuracion(args.config)
+    except ErrorDeConfiguracion as error:
+        return _error("ciclos", str(error))
+
+    try:
+        resultado = segmentar_corrida(args.corrida, args.out or args.corrida, configuracion)
+    except (ErrorDeConfiguracion, ErrorDeFiltrado, ErrorDeSegmentacion) as error:
+        return _error("ciclos", str(error))
+    except OSError as error:
+        print(f"swimalyzer ciclos: error: {error}", file=sys.stderr)
+        return SALIDA_ERROR_DE_EJECUCION
+
+    _resumir_ciclos(resultado)
     return SALIDA_OK
 
 

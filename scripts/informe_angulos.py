@@ -39,12 +39,17 @@ ARTICULACION_DE_REFERENCIA = "codo_izq"
 #: número, no el número: elegirlo es una decisión abierta.
 UMBRALES_DE_VELOCIDAD: tuple[float, ...] = (10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 80.0)
 
-#: Frecuencia de brazada del material, en Hz: el pico dominante de la PSD en el
-#: informe de caracterización de esta corrida. Se usa solo para calcular con qué
-#: velocidad se movería el ángulo si la brazada fuera una oscilación sinusoidal,
-#: que es la referencia contra la cual se lee la velocidad medida. Sobre otro
-#: material hay que volver a mirarla.
-FRECUENCIA_DE_BRAZADA_HZ = 0.47
+#: Frecuencia de brazada del material, en Hz: la mediana de la duración de los
+#: ciclos ya segmentados (1.83 s sobre 7 ciclos, ver el informe de ciclos). Se
+#: usa solo para calcular con qué velocidad se movería el ángulo si la brazada
+#: fuera una oscilación sinusoidal, que es la referencia contra la cual se lee
+#: la velocidad medida. Sobre otro material hay que volver a mirarla.
+#:
+#: Antes acá decía 0.47 Hz, que era el pico de la PSD del informe de
+#: caracterización. Ese espectro usa ventanas de 8 s, o sea que su resolución es
+#: de 0.234 Hz y 0.47 era el bin 2: el número no distinguía 0.47 de 0.55. La
+#: medición por segmentación es la fina.
+FRECUENCIA_DE_BRAZADA_HZ = 0.55
 
 #: Percentiles de la distribución de velocidad angular que van al informe.
 PERCENTILES_DE_VELOCIDAD: tuple[float, ...] = (50, 75, 90, 95, 99)
@@ -421,8 +426,9 @@ def _informe(resumen: dict) -> str:
         "",
         "---",
         "",
-        "Este informe no elige ningún criterio de segmentación de ciclos: esa sigue siendo una",
-        "decisión abierta.",
+        "Este informe no segmenta ciclos: eso lo hace `swimalyzer ciclos` y se documenta en",
+        "`ciclos/informe.md`. La frecuencia de brazada que se usa acá como referencia sale de",
+        "esa segmentación.",
         "",
     ]
     return "\n".join(partes)

@@ -9,12 +9,11 @@ from swimalyzer.config import Configuracion, ErrorDeConfiguracion, cargar_config
 
 CONFIG_DEL_REPO = Path(__file__).resolve().parent.parent / "config.yaml"
 
-# Lo que sigue sin definir en el config del repo. El resto de las decisiones se
-# tomó con el informe de caracterización a la vista.
-DECISIONES_ABIERTAS = [
-    "segmentacion.senal",
-    "segmentacion.distancia_minima_entre_picos_s",
-]
+# Lo que sigue sin definir en el config del repo. Hoy está vacío: todas las
+# decisiones se tomaron con su informe a la vista. La lista se queda para que
+# agregar una decisión abierta traiga su test, y el mecanismo de `null` sigue
+# cubierto por `test_exigir_falla_con_un_valor_en_null`.
+DECISIONES_ABIERTAS: list[str] = []
 
 #: Valores ya decididos: `exigir` tiene que devolverlos sin protestar.
 DECISIONES_TOMADAS = [
@@ -28,6 +27,8 @@ DECISIONES_TOMADAS = [
     "lateralidad.metodo_correccion_intercambios",
     "lateralidad.margen_minimo_px",
     "lateralidad.separacion_minima_px",
+    "segmentacion.senal",
+    "segmentacion.distancia_minima_entre_picos_s",
 ]
 
 
@@ -119,6 +120,22 @@ def test_decisiones_abiertas_sin_definir_en_el_repo(parametro):
 @pytest.mark.parametrize("parametro", DECISIONES_TOMADAS)
 def test_decisiones_ya_tomadas_estan_definidas_en_el_repo(parametro):
     assert cargar_configuracion(CONFIG_DEL_REPO).exigir(parametro) is not None
+
+
+def test_exigir_falla_con_un_valor_en_null(tmp_path):
+    """El freno de las decisiones abiertas: en null, la etapa que lo pida no corre.
+
+    Es lo que evita que un valor provisorio termine en una figura sin que nadie
+    recuerde que era provisorio.
+    """
+    datos = _datos_del_repo()
+    datos["segmentacion"]["distancia_minima_entre_picos_s"] = None
+    configuracion = cargar_configuracion(_escribir(datos, tmp_path))
+
+    with pytest.raises(
+        ErrorDeConfiguracion, match="'segmentacion.distancia_minima_entre_picos_s' está en null"
+    ):
+        configuracion.exigir("segmentacion.distancia_minima_entre_picos_s")
 
 
 def test_exigir_devuelve_el_valor_definido():
