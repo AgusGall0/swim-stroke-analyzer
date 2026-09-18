@@ -391,6 +391,18 @@ del ruido, así que el desempate fue biomecánico y no numérico.
 | hombro izq | 7 | 36,4° | 82,8° | 24,6 % |
 | rodilla izq | 7 | 6,5° | 13,0° | 26,3 % |
 
+![Curva media del ángulo de codo a lo largo del ciclo de brazada](docs/curva_media_codo.png)
+
+> **Esta figura es una corrida concreta, no un resultado del método.** Sale del
+> video de desarrollo (`crol_lateral.mp4`, recortado a 576×324, 30 fps),
+> procesado el **2026-09-18** con el commit `b2d406c`. Son **7 ciclos de un solo
+> nadador en una pileta de contracorriente**, con el lado cercano a la cámara y
+> sin ninguna validación contra anotación manual. No describe la brazada de ese
+> nadador ni, mucho menos, la brazada de crol en general: describe estos siete
+> ciclos. Se regenera con `swimalyzer ciclos` y `scripts/informe_ciclos.py`, y
+> se versiona porque es el entregable de esta etapa (ver CLAUDE.md, "Qué se
+> versiona aunque sea derivado").
+
 **Ningún ciclo se descartó por tener mediciones marcadas.** Con 7 ciclos,
 descartar los que tienen alguna medición marcada deja la muestra en nada y
 esconde el problema: la figura saldría limpia porque se le sacó lo sucio, no
