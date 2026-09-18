@@ -330,6 +330,34 @@ offline con un brazo. Eso se corrige en la Fase 0.
 **No versiones** el video, fotogramas extraídos, el modelo `.task`, ni archivos
 de landmarks generados. Todo eso es derivado o de terceros.
 
+### Qué se versiona aunque sea derivado
+
+**`docs/curva_media_codo.png` sí se versiona**, y es una excepción deliberada a
+la regla de arriba. No la reviertas por aplicar la regla general.
+
+El motivo: la regla existe para los Parquet y las figuras de informe, que se
+regeneran en segundos y engordarían el repo sin darle nada a quien lo abre. Esta
+figura es distinta en tres cosas. Es **el entregable** de la etapa, no un
+subproducto. Es **lo que se muestra para explicar el proyecto**, así que tiene
+que verse en el README sin clonar ni correr nada. Y era la **única imagen del
+repo**, en un proyecto de visión por computadora, que es una carencia rara de
+explicar.
+
+Las condiciones de la excepción, para que no se expanda sola:
+
+- Va en `docs/`, con una excepción explícita en `.gitignore` (`!docs/*.png`).
+  Las figuras de los informes siguen en `salidas/`, que está ignorada.
+- **Se regenera desde un árbol limpio**, para que la metadata de la corrida
+  registre un commit reproducible. Una figura versionada cuya metadata dice
+  `arbol_git_limpio: false` no se puede volver a producir, y entonces no vale
+  más que una captura de pantalla.
+- **Su epígrafe en el README dice de qué corrida sale**: el video, la fecha y el
+  commit, y que son siete ciclos de un nadador sin validar. Una figura suelta en
+  un README se lee como resultado general del método, y esta no lo es.
+- Si la figura cambia, se regenera y se actualiza el epígrafe en el mismo
+  commit. Una figura versionada que dejó de corresponderse con el código es peor
+  que no tenerla.
+
 ## Trabajo pendiente
 
 **Fase 0 — Andamiaje.** Estructura de paquete, `pyproject.toml` con versiones

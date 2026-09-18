@@ -24,7 +24,7 @@ dist/
 # --- Fotogramas extraídos ---
 # Se ignoran todas las imágenes para no versionar fotogramas por accidente.
 # Si la documentación necesita una imagen propia, agregar una excepción
-# explícita (por ejemplo, !docs/img/diagrama.png).
+# explícita, como la de docs/ acá abajo.
 fotogramas/
 *.png
 *.jpg
@@ -32,6 +32,12 @@ fotogramas/
 *.bmp
 *.tif
 *.tiff
+
+# Excepción: las figuras que son el entregable del proyecto viven en docs/ y sí
+# se versionan. El motivo está en CLAUDE.md, en "Qué se versiona aunque sea
+# derivado". No es una puerta para volcar acá cualquier figura de corrida: las
+# figuras de los informes siguen viviendo en salidas/, que está ignorada.
+!docs/*.png
 
 # --- Modelo de MediaPipe (se descarga con scripts/descargar_modelo.py) ---
 modelos/
